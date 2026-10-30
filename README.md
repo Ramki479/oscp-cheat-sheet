@@ -137,7 +137,16 @@ npm run build && npm run validate && npm test
 ```
 
 If you change `data/*.json` or the shell, bump `VERSION` in `sw.js` so returning visitors
-receive the new cache.
+receive the new cache. CI enforces this: `npm run check:cache` compares the precached files
+against `HEAD` and fails when one changed without a version bump. The service worker also
+refuses to delete older caches unless the new cache actually filled, so an install that runs
+offline cannot wipe a working offline copy.
+
+To check the deployable output rather than the sources:
+
+```bash
+npm run build && npm run preview   # serves build/ on http://localhost:8000
+```
 
 ---
 
@@ -265,16 +274,17 @@ folder in `build/`.
 | Node version | 24 |
 
 `build/` contains only `index.html`, `manifest.webmanifest`, `sw.js`, `assets/`,
-`icons/` and `data/`. Sources, tests, audits and backups stay out of it.
+`icons/` and `data/`. Sources, tests, audits and backups stay out of it. `npm run preview`
+serves that folder locally so you can check what actually deploys.
 
 ### Render
 
 `render.yaml` in the repository root is a blueprint with those settings baked
-in, so a Render Blueprint deploy needs no dashboard edits. For a plain static
-site created from the dashboard, set the build command and publish directory
-above — publishing the repository root instead serves `content/`, `tools/` and
-the audit trail to the public and fails nothing, which is why `build/` is the
-default.
+in, so a Render Blueprint deploy needs no dashboard edits — it also applies the
+`no-cache` rules for `/sw.js` and `/data/*`. A static site created from the
+dashboard keeps Render's default `npm install; npm run build` and gets no custom
+headers, so prefer the blueprint. Either way, never point the publish directory
+at the repository root: that serves `content/`, `tools/` and the audit trail.
 
 ### Vercel
 
@@ -332,6 +342,7 @@ content/raw/                frozen source export + per-page metadata
 content/step-ids.json       stable step-ID registry keyed by page + step title
 tools/parse.mjs             export → JSON normalizer/parser
 tools/bundle.mjs            copies the browser-facing files into build/
+tools/check-cache-version.mjs  fails when cached files change without a sw.js bump
 tools/validate.mjs          data contract checks
 tests/                      node:test suites (engine, data, bundle, browser)
 sw.js · manifest.webmanifest · icons/icon.svg

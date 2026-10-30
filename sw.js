@@ -1,5 +1,7 @@
 /* Offline cache: app shell + generated command data. */
-const VERSION = "oscp-cheat-v8";
+/* Bump VERSION whenever data/*.json or the shell changes, so returning visitors drop the
+   old cache. `npm run check:cache` fails CI when a rebuilt dataset ships a stale name. */
+const VERSION = "oscp-cheat-v9";
 const CACHE = VERSION;
 const SHELL = [
   "./",
@@ -26,9 +28,17 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    (async () => {
+      // Retire older caches only once this version has something cached. An
+      // install that ran with no network leaves CACHE empty; deleting the
+      // previous cache at that point would destroy the user's only offline copy.
+      const primed = (await (await caches.open(CACHE)).keys()).length > 0;
+      if (primed) {
+        const keys = await caches.keys();
+        await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+      }
+      await self.clients.claim();
+    })()
   );
 });
 

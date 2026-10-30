@@ -45,3 +45,11 @@ test("bundled shell points at files the bundle actually contains", () => {
   const missing = shell.filter(rel => !fs.existsSync(path.join(BUILD, rel)));
   assert.deepEqual(missing, [], "every precached path must exist in build/");
 });
+
+test("bundled service worker carries the source cache version", () => {
+  const version = (file) => /const VERSION = "([^"]+)"/.exec(fs.readFileSync(path.join(file), "utf8"))?.[1];
+
+  const source = version(path.join(ROOT, "sw.js"));
+  assert.match(source || "", /^oscp-cheat-v\d+$/, "sw.js must pin a cache version");
+  assert.equal(version(path.join(BUILD, "sw.js")), source, "build/ must ship the current version");
+});

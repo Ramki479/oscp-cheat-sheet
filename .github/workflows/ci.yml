@@ -10,6 +10,9 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v4
+        with:
+          # Depth 2 so the cache check can diff the pushed commit against its parent.
+          fetch-depth: 2
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -31,10 +34,16 @@ jobs:
       - name: Rebuild the dataset from content/raw
         run: npm run build
 
+      # A rebuilt dataset shipped under an unchanged cache name leaves returning
+      # visitors on stale commands. Diff the pushed commit against its parent rather
+      # than trusting a README rule.
+      - name: Check the service worker cache version
+        run: npm run check:cache -- HEAD^
+
       - name: Validate the data contract
         run: npm run validate
 
-      - name: Test (engine, data, regression, browser)
+      - name: Test (engine, data, bundle, regression, browser)
         run: npm test
         env:
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
