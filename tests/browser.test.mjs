@@ -13,7 +13,11 @@ import puppeteer from "puppeteer-core";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const PORT = 8123;
 const BASE = `http://127.0.0.1:${PORT}/`;
-const CHROME = ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"].find(p => fs.existsSync(p));
+// CHROME_PATH lets CI point at the browser it provisioned; otherwise use a
+// system Chromium/Chrome, and skip the browser suite when there is none.
+const CHROME = [process.env.CHROME_PATH, process.env.CHROME, "/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"]
+  .filter(Boolean)
+  .find(p => fs.existsSync(p));
 
 const data = JSON.parse(fs.readFileSync(path.join(ROOT, "data", "commands.json"), "utf8"));
 

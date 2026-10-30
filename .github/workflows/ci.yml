@@ -1,0 +1,40 @@
+name: CI
+
+on: push
+
+jobs:
+  build-validate-test:
+    name: Build, validate, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The browser suite launches a real Chromium; the runner image does not
+      # ship one at the path the tests look for, so provide it explicitly.
+      - name: Provide Chromium
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          install-chromedriver: false
+
+      - name: Rebuild the dataset from content/raw
+        run: npm run build
+
+      - name: Validate the data contract
+        run: npm run validate
+
+      - name: Test (engine, data, regression, browser)
+        run: npm test
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
