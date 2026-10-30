@@ -1,0 +1,436 @@
+> **Purpose:** confirm SSH, work out which authentication is actually possible, prioritize credentials and keys you already have, and connect without unsafe guessing. Tunneling and proxying live on their own page.
+
+## Quick navigation
+
+- **1.** Detection and version identification
+- **2.** Authentication behavior
+- **3.** Algorithm enumeration
+- **4.** Verbose connection diagnostics
+- **5.** Check already available credentials
+- **6.** Discover SSH keys
+- **7.** Validate key format and fingerprint
+- **8.** Prepare private-key permissions
+- **9.** Determine whether a passphrase is required
+- **10.** Conditional passphrase recovery
+- **11.** Connect using the key
+- **12.** Legacy algorithm compatibility
+- **13.** Troubleshooting and pivoting
+- **14.** Quick workflow
+- **15.** Evidence to preserve
+- **16.** References
+- **17.** Verification note
+
+**Priority:** Core / Conditional / Advanced. **Status:** **Lab Tested** = executed against an authorised lab target · **Simulated** = exercised with simulated output or fixtures · **Syntax Checked** = flags checked against the installed tool here · **Environment Dependent** = needs a specific tool, version or host configuration · **Documented** = standard technique, not run here.
+
+## Prerequisites and execution location
+
+- **Runs on:** Kali Linux.
+- **Needs:** `ssh`, `ssh-keygen`, `ssh2john`, `john`; `nmap` with the `ssh-*` scripts. `sshpass` is only for a known password, not for guessing.
+- **Access:** authorised lab scope only. Do not test credentials or keys you are not permitted to use.
+- **Out of scope here:** `-L`, `-R`, `-D`, SOCKS and proxying → [Tunneling & Pivoting — Complete Command Reference](#/p/tunneling). The Tunneling page is also available in the site navigation.
+
+## 1. Detection and version identification
+
+### Step 01 — Confirm the service and version
+
+**Priority:** Core · **Run on:** Kali · **Status:** Syntax Checked
+
+```bash
+nmap -sV -p22 <TARGET_IP>
+```
+
+**Purpose:** prove SSH is listening and capture the server implementation/version before choosing an authentication path.
+
+**Prerequisites:** target reachable from Kali; authorised scope confirmed.
+
+**Look for:** `22/tcp open ssh` and an `OpenSSH version` banner. If the port is closed or filtered, that is a result, not a failure.
+
+**Success path:** port open with an SSH banner → continue to Step 02. A non-standard port is fine if the banner identifies SSH; rerun detection with `-p <TARGET_PORT>`.
+
+**Failure path:** closed or filtered → check the port scan and other open services. Do not run authentication tests against a port with no SSH service. If the host is unreachable, fix routing/VPN first.
+
+**Decision:** SSH open → establish authentication behavior next. SSH closed → leave the SSH branch and investigate the services that are actually exposed.
+
+**Next:** Step 02.
+
+**Common mistake:** assuming an unusual port means “not SSH”; confirm the banner on every unknown port instead.
+
+**Evidence:** port state, service name and version.
+
+## 2. Authentication behavior
+
+### Step 02 — Ask without authenticating
+
+**Priority:** Core · **Run on:** Kali · **Status:** Syntax Checked
+
+```bash
+ssh -o PreferredAuthentications=none -o StrictHostKeyChecking=no <USERNAME>@<TARGET_IP>
+```
+
+```bash
+nmap -p22 --script ssh-auth-methods <TARGET_IP>
+```
+
+**Purpose:** ask the server which authentication methods it will offer without supplying a password or key.
+
+**Prerequisites:** SSH confirmed open; a candidate username, even if unverified.
+
+**Look for:** a `Permission denied (publickey,password).` line, or a similar list of methods. The methods shown are the useful result. The Nmap script can provide a second view; neither output is a guaranteed complete list.
+
+**Success path:** `publickey` appears → prioritize key discovery (Step 06). `password` appears → test a known credential (Step 05) before considering any guessing. Both appear → use the credential/key you already have first.
+
+**Failure path:** no method list, timeout, or connection failure → go to Step 04 for diagnostics. The server may also vary its response by user or configuration, so do not treat one response as a complete inventory.
+
+**Decision:** a usable credential or key source decides the branch. Do not start password guessing just because `password` is listed.
+
+**Next:** Step 05 if a known credential exists; Step 06 if keys are the likely path; Step 04 if the response is unclear.
+
+**Common mistake:** using `ssh -v` for this and reading a wall of debug output; `PreferredAuthentications=none` answers the method question directly.
+
+**Evidence:** the exact method list, username and timestamp.
+
+## 3. Algorithm enumeration
+
+### Step 03 — Read the algorithm list
+
+**Priority:** Conditional · **Run on:** Kali · **Status:** Syntax Checked
+
+```bash
+nmap -p22 --script ssh2-enum-algos <TARGET_IP>
+```
+
+**Purpose:** record the server’s key-exchange, host-key, cipher and MAC algorithms while the connection is still unauthenticated, so later negotiation failures have evidence.
+
+**Prerequisites:** SSH confirmed open; Nmap SSH scripts installed.
+
+**Look for:** KEX algorithms, host-key algorithms, encryption ciphers and MACs. Note anything legacy such as `diffie-hellman-group1-sha1`, `ssh-rsa`, `arcfour` or `3des-cbc`.
+
+**Success path:** algorithms recorded → use them only if a later connection fails during negotiation. Use the compatibility subsection (Step 12) with the smallest matching option.
+
+**Failure path:** script returns nothing or errors → verify the Nmap script path and rerun with `--script-trace` if needed. Do not infer supported algorithms from a failed script.
+
+**Decision:** legacy algorithms are a hardening finding, not an authentication bypass. They do not grant access and should not be reported as one.
+
+**Next:** Step 04 if diagnostics are needed; otherwise Step 05 or Step 06.
+
+**Common mistake:** reporting “weak SSH algorithms” as if it is an access path; it is a configuration observation.
+
+**Evidence:** the full algorithm list and the exact Nmap command.
+
+## 4. Verbose connection diagnostics
+
+### Step 04 — Verbose connection trace
+
+**Priority:** Conditional · **Run on:** Kali · **Status:** Syntax Checked
+
+```bash
+ssh -v <USERNAME>@<TARGET_IP>
+```
+
+**Purpose:** see where the connection stops when detection or authentication behavior is inconclusive.
+
+**Prerequisites:** a candidate username; the failure has already been observed once.
+
+**Look for:** protocol negotiation, host-key type, `Authentications that can continue:`, and the last successful stage before failure.
+
+**Success path:** an authentication list appears → return to Step 02/05 and choose the matching credential path. A clean handshake that reaches authentication is normal.
+
+**Failure path:** failure before authentication → network, host-key or algorithm problem; use Step 03 results and the Troubleshooting — Complete Command Reference page. Failure after authentication starts → check the credential, username and key.
+
+**Decision:** use higher verbosity only when it answers a specific question. A timeout is not an algorithm error; diagnose reachability first.
+
+**Next:** Step 05 or Step 06 when authentication is reached; Step 03/12 only for a demonstrated negotiation mismatch.
+
+**Common mistake:** leaving the command running while it waits for a password; use `Ctrl-C` and rerun with a non-interactive option only when appropriate.
+
+**Evidence:** the algorithm, auth-method and failure lines, with secrets removed.
+
+## 5. Check already available credentials
+
+### Step 05 — One deliberate attempt, not a brute force
+
+**Priority:** Conditional · **Run on:** Kali · **Status:** Environment Dependent
+
+```bash
+sshpass -p '<PASSWORD>' ssh -o StrictHostKeyChecking=no <USERNAME>@<TARGET_IP>
+```
+
+**Purpose:** test a credential discovered through authorised enumeration exactly once, without turning SSH into a noisy password-guessing exercise.
+
+**Prerequisites:** a known username and password from an authorised source; password authentication appears available; lab rules permit credential use. `sshpass` is a separate package (`sudo apt install sshpass`) and is **not** installed on the build host used for this audit — without it, run `ssh` interactively and type the password (Step 04).
+
+**Look for:** a shell prompt, or `Permission denied`.
+
+**Success path:** shell obtained → record the exact command and host-key fingerprint, then enumerate the host and move to the privilege-escalation page.
+
+**Failure path:** denied → confirm the username, the authentication method and the credential source before trying anything else. Check SMB/HTTP shares, configs and notes for a better credential. Do not loop over a wordlist.
+
+**Decision:** `sshpass` is a non-interactive password-passing utility, not inherently a brute-force tool. Keep a known-credential attempt distinct from password spraying or guessing.
+
+**Next:** Step 06 for keys or a better credential source. Use password guessing only if the lab rules explicitly allow it and the noise is acceptable.
+
+**Common mistake:** spraying SSH before checking other services for credentials; the password is often already on the target.
+
+**Evidence:** success banner, username, host-key fingerprint and timestamp. Never put the password in shared notes.
+
+## 6. Discover SSH keys
+
+Look for private and public keys in locations already reached through authorised enumeration: SMB/HTTP shares, web roots, deployment folders, backups, configuration files, Git repositories, home directories and machine notes. Do not run a blind filesystem-wide key hunt unless the lab rules allow it.
+
+- **Expected result:** candidate key files (for example `id_rsa`, `id_ed25519`, `*.pem`, `*.key`) plus a likely username or account.
+- **If a key is found:** continue to Step 06 to identify the format and test whether it is encrypted.
+- **If no key is found:** continue with other viable access paths; absence of a key does not prove SSH is unusable.
+- **Common mistake:** assuming every file that looks like a key is valid or authorised. A key only matters if it matches the target account and its `authorized_keys`.
+
+## 7. Validate key format and fingerprint
+
+### Step 06 — Identify a found key
+
+**Priority:** Core · **Run on:** Kali · **Status:** Syntax Checked
+
+```bash
+file <KEY_FILE>
+head -1 <KEY_FILE>
+ssh-keygen -y -f <KEY_FILE>
+```
+
+**Purpose:** determine whether the file is a usable private key, which format it uses, and whether it is encrypted.
+
+**Prerequisites:** a candidate key copied from an authorised location.
+
+**Look for:** `OpenSSH private key` versus `PEM RSA private key`; the first line of the file; `ssh-keygen -y` printing the matching public key, or prompting for a passphrase.
+
+**Success path:** public key prints → the key is unencrypted and structurally readable; continue to Step 07 to check authorisation, then Step 08 for permissions.
+
+**Failure path:** `invalid format` → check whether the file is a public key, a certificate, a partial download or a different format. A passphrase prompt is not a failure; go to Step 09 after permissions. Do not assume a key is authorised merely because it parses.
+
+**Decision:** format is readable → validate fingerprint and permissions before use. Format is unreadable → repair or obtain a complete copy before trying to connect.
+
+**Next:** Step 07.
+
+**Common mistake:** treating a public key or an `authorized_keys` line as a private key; only a private key can authenticate a client.
+
+**Evidence:** key type, first-line header and the derived public-key fingerprint. Never record private key material in a shared page.
+
+### Step 07 — Check matching public keys
+
+**Priority:** Conditional · **Run on:** Kali · **Status:** Syntax Checked
+
+```bash
+ssh-keygen -lf <KEY_FILE>          # fingerprint
+ssh-keygen -lf ~/.ssh/authorized_keys
+```
+
+**Purpose:** compare the found key’s fingerprint with keys that are actually authorised for the target account.
+
+**Prerequisites:** a readable key; an `authorized_keys` file or equivalent evidence from the target.
+
+**Look for:** the same fingerprint on both sides. A matching fingerprint identifies the key; a matching `authorized_keys` entry is what suggests authorisation.
+
+**Success path:** fingerprint matches a target account’s authorised key → continue to Step 08 and prepare permissions.
+
+**Failure path:** no match → the key is not authorised for that account, or you are looking at the wrong user/source. Check other accounts and key locations; do not assume the key will work.
+
+**Decision:** fingerprinting proves identity/format, not successful authentication. Keep the distinction in notes and reports.
+
+**Next:** Step 08 after a plausible match; otherwise return to Step 06/key discovery.
+
+**Common mistake:** comparing key text by eye instead of comparing fingerprints.
+
+**Evidence:** the fingerprint pair, the account and the source path.
+
+## 8. Prepare private-key permissions
+
+### Step 08 — Fix permissions before SSH refuses the key
+
+**Priority:** Core · **Run on:** Kali · **Status:** Syntax Checked
+
+```bash
+chmod 600 <KEY_FILE>
+```
+
+**Purpose:** satisfy OpenSSH’s common private-key permission requirement before attempting authentication.
+
+**Prerequisites:** the key has been validated and copied to a local working path.
+
+**Look for:** no output; `ls -l <KEY_FILE>` shows `-rw-------`.
+
+**Success path:** permissions corrected → continue to Step 09 (passphrase check) or Step 11 if the key is already known to be unencrypted and authorised.
+
+**Failure path:** permission change fails → check ownership, path and whether the key lives on a read-only/mounted share. Copy it to `<OUTPUT_DIR>` and retry.
+
+**Decision:** restrictive permissions are commonly required for private keys; do not change public-key permissions unnecessarily.
+
+**Next:** Step 09.
+
+**Common mistake:** editing or using a key directly from a mounted share; copy it locally first.
+
+**Evidence:** `ls -l <KEY_FILE>` showing mode `-rw-------`.
+
+## 9. Determine whether a passphrase is required
+
+### Step 09 — Detect the passphrase
+
+**Priority:** Core · **Run on:** Kali · **Status:** Syntax Checked
+
+```bash
+ssh-keygen -y -f <KEY_FILE>
+```
+
+**Purpose:** determine whether the private key is encrypted before deciding whether recovery is needed.
+
+**Prerequisites:** validated key and restrictive permissions in place.
+
+**Look for:** `Enter passphrase:` → encrypted; a printed `ssh-rsa AAAA...` or equivalent public key → not encrypted.
+
+**Success path:** unencrypted → go to Step 11 and connect. Encrypted with a usable passphrase → go to Step 11 and enter it when prompted.
+
+**Failure path:** encrypted and passphrase unavailable → continue to Step 10, but only in an authorised environment. If the file cannot be parsed, return to Step 06.
+
+**Decision:** do not crack a key unless recovery is authorised and the passphrase is actually missing.
+
+**Next:** Step 11 if usable; Step 10 if recovery is justified.
+
+**Common mistake:** assuming an encrypted key is unusable; it may be usable with a known passphrase, and it is not the same thing as a login password.
+
+**Evidence:** whether a passphrase is required, and whether a usable passphrase is already available. Do not record the passphrase itself.
+
+## 10. Conditional passphrase recovery
+
+### Step 10 — Crack the passphrase
+
+**Priority:** Conditional · **Run on:** Kali · **Status:** Syntax Checked
+
+```bash
+ssh2john <KEY_FILE> > <OUTPUT_FILE>
+john --wordlist=<WORDLIST> <OUTPUT_FILE>
+john --show <OUTPUT_FILE>
+```
+
+**Purpose:** recover a missing passphrase for an encrypted private key when the lab rules allow it.
+
+**Prerequisites:** encrypted key; `ssh2john` and John installed; an authorised wordlist and environment.
+
+**Look for:** a recovered passphrase in the John output, or a failed/exhausted run.
+
+**Success path:** passphrase recovered → use it with Step 11. Prefer an interactive prompt or a local agent; do not place the passphrase in a shared page.
+
+**Failure path:** not recovered → try a targeted wordlist once, then return to alternative credentials or enumeration. Recovery is optional, not mandatory.
+
+**Decision:** distinguish an encrypted key’s passphrase from a normal login password. Only recover in an authorised environment.
+
+**Next:** Step 11 with the recovered passphrase, or an alternative access path.
+
+**Common mistake:** piping the key into older `ssh2john` versions or forgetting the output file that John needs.
+
+**Evidence:** the John mode, wordlist and success/failure result; store any recovered secret only in the private machine notes.
+
+## 11. Connect using the key
+
+### Step 11 — Connect using the private key
+
+**Priority:** Core · **Run on:** Kali · **Status:** Syntax Checked
+
+```bash
+ssh -i <KEY_FILE> <USERNAME>@<TARGET_IP>
+```
+
+**Purpose:** authenticate with the validated private key and obtain a shell.
+
+**Prerequisites:** key format checked; fingerprint/authorisation plausibly established; permissions set to `600`; passphrase known or key unencrypted.
+
+**Look for:** a host-key verification prompt followed by a shell prompt. Verify the host-key fingerprint against independent evidence where the lab requires it.
+
+**Success path:** shell obtained → record the exact command and host-key fingerprint, then enumerate the host and move to the privilege-escalation page.
+
+**Failure path:** `Permission denied (publickey)` → the key is not authorised for that user/account; recheck the username and `authorized_keys`. `Load key ... invalid format` → return to Step 06. `Permissions ... too open` → return to Step 08. A negotiation error → use Step 03 and the targeted compatibility subsection (Step 12). A timeout → go to the Troubleshooting — Complete Command Reference page and diagnose reachability instead of changing algorithms.
+
+**Decision:** success confirms the key/account pair, not that every account accepts the key. Failure should route to the specific cause above, not to random option changes.
+
+**Next:** enumerate the shell; then use [Linux Privilege Escalation — Complete Command Reference](#/p/linux-privesc) for the local privilege-escalation workflow.
+
+**Common mistake:** using the wrong username, forgetting `-i`, or assuming a key is authorised before checking the target’s `authorized_keys`.
+
+**Evidence:** the exact `ssh` command, username, host-key fingerprint and initial shell identity (`id`/hostname).
+
+## 12. Legacy algorithm compatibility
+
+### Step 12 — Connect with legacy algorithms when required
+
+**Priority:** Advanced · **Run on:** Kali · **Status:** Documented
+
+```bash
+ssh -oKexAlgorithms=+diffie-hellman-group1-sha1 -oHostKeyAlgorithms=+ssh-rsa -oPubkeyAcceptedAlgorithms=+ssh-rsa <USERNAME>@<TARGET_IP>
+```
+
+**Purpose:** provide a narrowly scoped compatibility path when evidence shows the server rejects the modern negotiation set.
+
+**Prerequisites:** Step 03 algorithm output and Step 04 negotiation evidence showing a specific mismatch; a normal connection has already failed for that reason.
+
+**Look for:** a successful handshake where the default client refused. If the failure is authentication, timeout or a permission error, this step is the wrong tool.
+
+**Success path:** connection succeeds → use the session normally and record exactly which options were required.
+
+**Failure path:** still fails → inspect the specific KEX, host-key, cipher or MAC mismatch and add only the required option. Do not enable a blanket weak-algorithm profile.
+
+**Decision:** use this only when the error is a negotiation error such as `no matching host key type found` or `no matching key exchange method found`. Do not apply an algorithm workaround to auth or connectivity failures.
+
+**Next:** use the session normally, then report the legacy requirement as a configuration finding.
+
+**Common mistake:** enabling weak algorithms globally or leaving them in aliases/history for later targets; use a one-off command.
+
+**Evidence:** the exact forced options and the server/client negotiation lines.
+
+## 13. Troubleshooting and pivoting
+
+- **`Connection refused`** — nothing is listening on that port, or the port is wrong. Confirm the port scan before changing SSH options.
+- **`Connection timed out` / unreachable** — check routing, VPN and firewall state first. If the host is internal, use the pivoting path below.
+- **`Permission denied (publickey)`** — no matching authorised key for that account/user. Return to key discovery and fingerprint validation.
+- **`Permission denied (password)`** — password authentication is refused or the credential is wrong. Check the username and credential source; do not spray.
+- **`Too many authentication failures`** — the agent is offering too many keys. Use `-o IdentitiesOnly=yes -i <KEY_FILE>`.
+- **`REMOTE HOST IDENTIFICATION HAS CHANGED`** — verify whether the host was rebuilt, then update the known-hosts entry deliberately with `ssh-keygen -R <TARGET_IP>`.
+- **`no matching host key type found` / `no matching key exchange method found`** — return to Step 03 and use the targeted compatibility options in Step 12.
+- **`Permissions ... are too open`** — return to Step 08 and set `600`.
+- **`Load key ... invalid format`** — return to Step 06 and confirm whether the file is an OpenSSH/PEM private key, public key or incomplete copy.
+- **Encrypted key, no passphrase** — use Step 10 only in an authorised environment; otherwise return to alternative credentials/enumeration.
+
+**Stop condition:** no credentials, no usable keys and password authentication denied means SSH is not the entry point. Re-check shares, web roots and configuration files for a key before giving up.
+
+### Pivoting variant — internal hosts only
+
+`proxychains4 ssh <USERNAME>@<TARGET_IP>` works but is slow and fragile. Prefer ProxyJump: `ssh -J <USERNAME>@<PIVOT_HOST> <USERNAME>@<TARGET_IP>` — one session, no SOCKS layer, and the resulting shell can still forward ports with `-L`. See [Tunneling & Pivoting — Complete Command Reference](#/p/tunneling) for local, remote and dynamic forwarding.
+
+## 14. Quick workflow
+
+1. `nmap -sV -p22 <TARGET_IP>` — confirm SSH and version. If closed, leave the SSH branch.
+2. `ssh -o PreferredAuthentications=none <USERNAME>@<TARGET_IP>` — record the offered authentication methods.
+3. `nmap -p22 --script ssh2-enum-algos <TARGET_IP>` — record KEX/host-key/cipher/MAC algorithms before you need them.
+4. If the connection or method list is unclear, `ssh -v <USERNAME>@<TARGET_IP>` — diagnose the stage that fails.
+5. Test a known credential once with `sshpass` (never a wordlist loop). If it fails, verify the username and source.
+6. Search shares, web roots, configs and notes for private keys and matching usernames.
+7. `file <KEY_FILE>` + `head -1 <KEY_FILE>` + `ssh-keygen -y -f <KEY_FILE>` — identify format and whether it is encrypted.
+8. `ssh-keygen -lf <KEY_FILE>` — compare fingerprints with the target account’s `authorized_keys`.
+9. `chmod 600 <KEY_FILE>` — satisfy private-key permissions.
+10. If encrypted, `ssh-keygen -y -f <KEY_FILE>` again to confirm, then `ssh2john` + `john` only if recovery is authorised and necessary.
+11. `ssh -i <KEY_FILE> <USERNAME>@<TARGET_IP>` — connect and verify the host-key fingerprint.
+12. Use the legacy compatibility command only if Steps 3–4 proved a negotiation mismatch.
+13. If blocked, use the troubleshooting section and the pivoting path; then enumerate from the new shell and move to privilege escalation.
+
+## 15. Evidence to preserve
+
+- The exact SSH/Nmap commands and their relevant output.
+- The authentication-method line and server version.
+- The algorithm list and any negotiation error.
+- Key fingerprints from both sides and the `ls -l` permission proof.
+- The exact `ssh` command that worked, the username and host-key fingerprint.
+- Initial shell identity and the timestamp. Do not store passwords, passphrases or private key material in shared notes.
+
+## 16. References
+
+- `ssh_config` manual: [https://man.openbsd.org/ssh_config](https://man.openbsd.org/ssh_config)
+- `ssh-keygen` manual: [https://man.openbsd.org/ssh-keygen](https://man.openbsd.org/ssh-keygen)
+- OpenSSH release notes (algorithm deprecations): [https://www.openssh.com/releasenotes.html](https://www.openssh.com/releasenotes.html)
+
+## 17. Verification note
+
+Flags were checked against the local `ssh`, `ssh-keygen`, `ssh2john` and `nmap` help/output. No SSH session was opened against a live host for this page; nothing is **Lab Tested**. The weak-algorithm section is explicitly a configuration finding, not an access path. The `ssh -i` step is Syntax Checked against the installed client; the legacy compatibility step remains Documented. Step 05 is **Environment Dependent**: `sshpass` is not installed here, so only its documented flags are reproduced.

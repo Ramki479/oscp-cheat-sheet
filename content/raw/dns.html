@@ -1,0 +1,191 @@
+
+> <b>Purpose:</b> turn an IP into names, records and (when you are lucky) a full zone — then hand those names to the web and AD pages.
+
+## Quick navigation
+
+- <b>1.</b> Detect DNS
+- <b>2.</b> Basic record lookups
+- <b>3.</b> Reverse lookups
+- <b>4.</b> Zone transfer
+- <b>5.</b> Subdomain enumeration
+- <b>6.</b> Hostname handling and <code>/etc/hosts</code>
+- <b>7.</b> Active Directory SRV records
+- <b>8.</b> Troubleshooting
+- <b>9.</b> Quick workflow
+- <b>10.</b> Evidence to preserve
+- <b>11.</b> Related pages
+- <b>12.</b> References
+- <b>13.</b> Verification note
+
+<b>Priority:</b> Core / Conditional / Advanced. <b>Status:</b> <b>Lab Tested</b> = executed against an authorised lab target · <b>Simulated</b> = exercised with simulated output or fixtures · <b>Syntax Checked</b> = flags checked against the installed tool here · <b>Environment Dependent</b> = needs a specific tool, version or host configuration · <b>Documented</b> = standard technique, not run here.
+
+## Prerequisites and execution location
+
+- <b>Runs on:</b> Kali Linux.
+- <b>Needs:</b> <code>dig</code> (bind9-dnsutils), <code>dnsenum</code>, <code>dnsrecon</code>; a wordlist for bruteforce.
+- <b>Always query the target's resolver</b> with <code>@<TARGET_IP></code>. Without it you are asking your own DNS and learning nothing about the target.
+
+## Pivoting variant — internal hosts only
+
+SOCKS carries TCP only, so force TCP: <code>proxychains4 dig +tcp @<TARGET_IP> <DOMAIN></code>. A plain UDP <code>dig</code> through proxychains will simply time out. Zone transfers are already TCP, so <code>proxychains4 dig axfr @<TARGET_IP> <DOMAIN></code> works unchanged.
+
+## 1. Detect DNS
+
+### Step 01 — Confirm DNS is listening
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -sCV -p53 <TARGET_IP>
+sudo nmap -sU -p53 --script dns-nsid <TARGET_IP>
+```
+
+<b>Look for:</b> <code>domain</code> on 53/tcp, and a BIND/NSID response on UDP.<br /><b>Decision:</b> TCP 53 open is required for zone transfers; UDP is enough for ordinary queries.<br /><b>Next:</b> Step 02.<br /><b>Common mistake:</b> concluding "no DNS" from a UDP <code>open|filtered</code> result — confirm with <code>dig</code>.<br /><b>Evidence:</b> the version and whether TCP 53 is open.
+
+## 2. Basic record lookups
+
+### Step 02 — A and AAAA
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+dig @<TARGET_IP> <DOMAIN> A +short
+dig @<TARGET_IP> <DOMAIN> AAAA +short
+```
+
+<b>Look for:</b> one or more addresses. Empty output with <code>NOERROR</code> means the name exists but has no record of that type.<br /><b>Decision:</b> an internal IP resolves → add it to your target list and scan it.<br /><b>Next:</b> Step 03.<br /><b>Common mistake:</b> dropping <code>@<TARGET_IP></code> and hitting your own resolver (or the internet).<br /><b>Evidence:</b> the resolved addresses.
+
+### Step 03 — NS, MX, TXT, CNAME, SOA
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+dig @<TARGET_IP> <DOMAIN> NS +short
+dig @<TARGET_IP> <DOMAIN> MX +short
+dig @<TARGET_IP> <DOMAIN> TXT +short
+dig @<TARGET_IP> <DOMAIN> CNAME +short
+dig @<TARGET_IP> <DOMAIN> SOA +short
+```
+
+<b>Look for:</b> authoritative name servers, mail hosts, SPF/verification strings, the SOA's primary NS and admin mailbox.<br /><b>Decision:</b> NS names → resolve and test each for a zone transfer (Step 05). MX hosts → SMTP enumeration. SOA → the zone's primary server, often the DC.<br /><b>Next:</b> Step 04 (reverse) and Step 05 (transfer).<br /><b>Common mistake:</b> treating TXT as noise — SPF records leak internal hostnames and third-party services.<br /><b>Evidence:</b> the record set per type.
+
+## 3. Reverse lookups
+
+### Step 04 — PTR for one address
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+dig -x <TARGET_IP> +short
+```
+
+<b>Look for:</b> a hostname, or nothing.<br /><b>Decision:</b> name returned → resolve it forward and check for sibling hosts. Empty → normal.<br /><b>Next:</b> Step 05.<br /><b>Common mistake:</b> expecting PTRs for private ranges unless the DNS server is authoritative for them (common in AD labs).<br /><b>Evidence:</b> the name, if any.
+
+## 4. Zone transfer
+
+### Step 05 — Attempt AXFR
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+dig axfr @<TARGET_IP> <DOMAIN>
+```
+
+<b>Look for:</b> a full record listing, or <code>Transfer failed</code>.<br /><b>Decision:</b> success → every hostname goes into <code>/etc/hosts</code> and gets probed (Step 07). Failure → normal, secure configuration; go to Step 06.<br /><b>Next:</b> Step 07 on success, Step 06 on failure.<br /><b>Common mistake:</b> trying only one server. Repeat the AXFR against each NS from Step 03 — one may allow it while another refuses.<br /><b>Evidence:</b> the full zone dump, saved to <code><OUTPUT_FILE></code>.
+
+## 5. Subdomain enumeration
+
+### Step 06 — dnsenum (records + bruteforce + AXFR)
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+dnsenum --dnsserver <TARGET_IP> -f <WORDLIST> <DOMAIN>
+```
+
+<b>Look for:</b> host records, bruteforced names, and its own AXFR attempt.<br /><b>Decision:</b> new hostnames → resolve and probe them. Nothing → try Step 07 with a different wordlist.<br /><b>Next:</b> Step 07.<br /><b>Common mistake:</b> <code>--dnsserver</code> is mandatory for internal domains; without it dnsenum queries public DNS and returns nothing useful.<br /><b>Evidence:</b> the host list.
+
+### Step 07 — dnsrecon (SRV + brute)
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+dnsrecon -d <DOMAIN> -n <TARGET_IP> -t std
+dnsrecon -d <DOMAIN> -n <TARGET_IP> -t brt -D <WORDLIST>
+```
+
+<b>Look for:</b> SRV records, A/NS/MX tables, bruteforced subdomains.<br /><b>Decision:</b> SRV records for <code>_ldap._tcp</code> / <code>_kerberos._tcp</code> → you have found a domain controller (Step 08).<br /><b>Next:</b> Step 08 or the web page.<br /><b>Common mistake:</b> <code>-t std</code> is passive-ish and fast; <code>-t brt</code> needs a wordlist and time — do not run it blind against a huge list.<br /><b>Evidence:</b> the SRV block.
+
+## 6. Hostname handling
+
+### Step 08 — Map names to IPs
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+echo "<TARGET_IP> <DOMAIN>" | sudo tee -a /etc/hosts
+getent hosts <DOMAIN>
+```
+
+<b>Look for:</b> <code>getent</code> returning the target IP.<br /><b>Decision:</b> names resolve → browse by hostname and re-run vhost discovery.<br /><b>Next:</b> [HTTP & HTTPS — Complete Command Reference](https://app.notion.com/p/4011e51238b581649211c0c5db9c94f8).<br /><b>Common mistake:</b> overwriting <code>/etc/hosts</code> instead of appending, and adding names you have not confirmed.<br /><b>Evidence:</b> the <code>/etc/hosts</code> line.
+
+## 7. Active Directory SRV records
+
+### Step 09 — Find the DC through DNS
+
+<b>Priority:</b> Core (AD labs) · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+dig @<DOMAIN_CONTROLLER_IP> _ldap._tcp.<DOMAIN> SRV +short
+dig @<DOMAIN_CONTROLLER_IP> _kerberos._tcp.<DOMAIN> SRV +short
+dig @<DOMAIN_CONTROLLER_IP> _gc._tcp.<DOMAIN> SRV +short
+```
+
+<b>Look for:</b> <code>0 100 389 <dc-hostname>.<domain>.</code> style answers.<br /><b>Decision:</b> a DC hostname appears → add it to <code>/etc/hosts</code> and start AD enumeration.<br /><b>Next:</b> Active Directory — Complete Command Reference <i>(batch 3)</i>.<br /><b>Common mistake:</b> querying with the FQDN of the DC but not adding the record for <code><DOMAIN></code> itself — Kerberos needs both name forms.<br /><b>Evidence:</b> the SRV answers — they prove the domain name and the DC.
+
+## 8. Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| <code>connection timed out; no servers could be reached</code> | UDP 53 filtered | <code>dig +tcp @<TARGET_IP> <DOMAIN></code> |
+| <code>REFUSED</code> | Recursion disabled for your source | Query the authoritative zone directly; try AXFR |
+| <code>NXDOMAIN</code> | Name does not exist | Correct name, or brute-force |
+| <code>SERVFAIL</code> | Broken zone or forwarding | Try another NS |
+| <code>no servers could be reached</code> on <code>-x</code> | Private range not in DNS | Normal; use forward records instead |
+| AXFR <code>Transfer failed</code> | Transfers restricted | Try each NS; otherwise brute-force |
+
+<b>Stop condition:</b> if A, NS and AXFR all fail, DNS is probably not the path. Move on and return only if a hostname appears elsewhere.
+
+## 9. Quick workflow
+
+1. <code>nmap -sCV -p53</code> — confirm TCP/UDP DNS.
+2. <code>dig @<TARGET_IP> <DOMAIN> A/NS/MX/TXT</code> — records.
+3. <code>dig axfr @<TARGET_IP> <DOMAIN></code> — transfers, then against each NS.
+4. <code>dnsenum --dnsserver <TARGET_IP> -f <WORDLIST> <DOMAIN></code> — brute force.
+5. Add names to <code>/etc/hosts</code> and probe them.
+6. In AD: query the SRV records, then move to the AD page.
+
+## 10. Evidence to preserve
+
+- The record dump per type.
+- Any zone transfer output, unedited.
+- The <code>/etc/hosts</code> entries you added (they explain later results).
+- The resolver you queried — results differ per server.
+
+## 11. Related pages
+
+- [Nmap — Complete Command Reference](https://app.notion.com/p/4011e51238b581669e09d615530aa92a) — port discovery
+- [HTTP & HTTPS — Complete Command Reference](https://app.notion.com/p/4011e51238b581649211c0c5db9c94f8) — virtual hosts and content discovery
+- [📖 OSCP Command Handbook](https://app.notion.com/p/4011e51238b581689fafe0600844e4a7) — placeholders and statuses
+- Active Directory — Complete Command Reference <i>(batch 3)</i>
+- Directory and Virtual Host Enumeration — Complete Command Reference <i>(batch 5)</i>
+
+## 12. References
+
+- <code>dig</code> manual: [https://bind9.readthedocs.io/en/latest/manpages.html](https://bind9.readthedocs.io/en/latest/manpages.html)
+- DNS record types: [https://www.rfc-editor.org/rfc/rfc1035](https://www.rfc-editor.org/rfc/rfc1035)
+- dnsrecon: [https://github.com/darkoperator/dnsrecon](https://github.com/darkoperator/dnsrecon)
+
+## 13. Verification note
+
+Flags were checked against the local <code>dig</code>, <code>dnsenum</code> and <code>dnsrecon</code> help output. No query was sent to a live target for this page, so all statuses are <b>Syntax Checked</b> or <b>Documented</b>.

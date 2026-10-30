@@ -1,0 +1,24 @@
+{
+ "checked": 321,
+ "failed": 2,
+ "fails": [
+  {
+   "id": "machine-notes-01",
+   "page": "machine-notes",
+   "lang": "bash",
+   "ok": false,
+   "err": "/tmp/oscp-syntax-458466.sh: line 1: syntax error near unexpected token `newline' | /tmp/oscp-syntax-458466.sh: line 1: `<command>' | ",
+   "code": "<command>",
+   "missing": []
+  },
+  {
+   "id": "machine-notes-02",
+   "page": "machine-notes",
+   "lang": "bash",
+   "ok": false,
+   "err": "/tmp/oscp-syntax-458466.sh: line 1: syntax error near unexpected token `newline' | /tmp/oscp-syntax-458466.sh: line 1: `<command>' | ",
+   "code": "<command>",
+   "missing": []
+  }
+ ]
+}

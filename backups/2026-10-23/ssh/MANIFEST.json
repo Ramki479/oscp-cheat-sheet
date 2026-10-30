@@ -1,0 +1,101 @@
+{
+  "backupDate": "2026-10-23",
+  "source": "content/raw/ssh.html (verified against Notion fetch 2026-10-22T11:14:07.851Z)",
+  "notionPageId": "4011e51238b58123b446cc627bc02913",
+  "original": {
+    "sections": 15,
+    "steps": 11,
+    "commands": 11,
+    "sectionOrder": [
+      "ssh-priority-status-legend :: Priority & status legend",
+      "ssh-prerequisites-and-execution-location :: Prerequisites and execution location",
+      "ssh-pivoting-variant-internal-hosts-only :: Pivoting variant — internal hosts only",
+      "ssh-detect-ssh :: Detect SSH",
+      "ssh-authentication-method-discovery :: Authentication-method discovery",
+      "ssh-credential-testing-careful :: Credential testing (careful)",
+      "ssh-key-identification-and-inspection :: Key identification and inspection",
+      "ssh-key-permissions :: Key permissions",
+      "ssh-passphrase-protected-keys :: Passphrase-protected keys",
+      "ssh-weak-or-legacy-algorithms :: Weak or legacy algorithms",
+      "ssh-troubleshooting :: Troubleshooting",
+      "ssh-quick-workflow :: Quick workflow",
+      "ssh-evidence-to-preserve :: Evidence to preserve",
+      "ssh-references :: References",
+      "ssh-verification-note :: Verification note"
+    ],
+    "stepOrder": [
+      {
+        "id": "ssh-01",
+        "n": "01",
+        "title": "Confirm the service and version",
+        "commands": 1
+      },
+      {
+        "id": "ssh-02",
+        "n": "02",
+        "title": "Ask without authenticating",
+        "commands": 1
+      },
+      {
+        "id": "ssh-03",
+        "n": "03",
+        "title": "Verbose connection trace",
+        "commands": 1
+      },
+      {
+        "id": "ssh-04",
+        "n": "04",
+        "title": "One deliberate attempt, not a brute force",
+        "commands": 1
+      },
+      {
+        "id": "ssh-05",
+        "n": "05",
+        "title": "Identify a found key",
+        "commands": 1
+      },
+      {
+        "id": "ssh-06",
+        "n": "06",
+        "title": "Check matching public keys",
+        "commands": 1
+      },
+      {
+        "id": "ssh-07",
+        "n": "07",
+        "title": "Fix permissions before SSH refuses the key",
+        "commands": 1
+      },
+      {
+        "id": "ssh-08",
+        "n": "08",
+        "title": "Detect the passphrase",
+        "commands": 1
+      },
+      {
+        "id": "ssh-09",
+        "n": "09",
+        "title": "Crack the passphrase",
+        "commands": 1
+      },
+      {
+        "id": "ssh-10",
+        "n": "10",
+        "title": "Read the algorithm list",
+        "commands": 1
+      },
+      {
+        "id": "ssh-11",
+        "n": "11",
+        "title": "Connect with legacy algorithms when required",
+        "commands": 1
+      }
+    ]
+  },
+  "files": [
+    "ssh.html",
+    "ssh.json",
+    "ssh-page.json",
+    "commands.json"
+  ]
+}

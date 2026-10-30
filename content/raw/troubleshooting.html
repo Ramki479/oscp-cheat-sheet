@@ -1,0 +1,174 @@
+
+> <b>Purpose:</b> when something "does not connect", find the layer that is broken in under two minutes — interface/route, DNS, TCP, HTTP, or the proxy in between — instead of re-running the exploit.
+
+## Isolate the layer
+
+| Test | Layer | A healthy result |
+| --- | --- | --- |
+| <code>ip a</code>, <code>ip route</code>, <code>ping</code> | L3 | an address, a default route, replies |
+| <code>dig</code>, <code>getent hosts</code> | DNS | the expected IP |
+| <code>nc -nv IP PORT</code> | L4 | <code>succeeded</code> / <code>open</code> |
+| <code>ss -tlnp</code> | local stack | your listener bound |
+| <code>curl -v</code> | L7 | headers, status code |
+| <code>tcpdump</code> | ground truth | SYN, SYN-ACK, or nothing |
+
+Work <b>down</b> the list. The first failing row is the problem.
+
+## A. Connectivity and routing
+
+### Step 01 — Check the local stack and route
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ip a; ip route; ping -c 3 <TARGET_IP>
+ip route get <TARGET_IP>
+```
+
+<b>Look for:</b> an address on the correct interface, a default route, and ICMP replies.<br /><b>Decision:</b> no reply but the route exists → ICMP may be filtered; continue to Step 03 (TCP). Wrong interface/route → fix VPN/routing before anything else.<br /><b>Next:</b> Step 02.<br /><b>Common mistake:</b> treating a failed <code>ping</code> as "host down". Many exam targets drop ICMP while serving TCP perfectly.<br /><b>Evidence:</b> the <code>ip a</code>/<code>ip route</code> output and the ping result.
+
+### Step 02 — Check DNS
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+cat /etc/resolv.conf
+dig +short <DOMAIN>
+getent hosts <DOMAIN>
+```
+
+<b>Look for:</b> the intended resolver, the expected A record, and <code>getent</code> agreeing with <code>dig</code>.<br /><b>Decision:</b> <code>dig</code> works but an application fails → the app uses <code>/etc/hosts</code> or a different resolver. Add the entry explicitly.<br /><b>Next:</b> Step 03.<br /><b>Common mistake:</b> debugging DNS when you should use the IP. If the record is wrong, put the mapping in <code>/etc/hosts</code> and move on.<br /><b>Evidence:</b> the resolver config and the resolved address.
+
+## B. Ports and listeners
+
+### Step 03 — Raw TCP probe
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nc -nv <TARGET_IP> <TARGET_PORT>
+# scriptable
+nc -z -v <TARGET_IP> <TARGET_PORT> && echo OPEN || echo CLOSED
+```
+
+<b>Look for:</b> <code>succeeded</code> / <code>open</code>, or a banner.<br /><b>Decision:</b> open but the exploit fails → the service is there; the problem is protocol/credentials. Closed/timeout → firewall or wrong port.<br /><b>Next:</b> Step 04 (if you expect a listener) or Step 05 (HTTP).<br /><b>Common mistake:</b> testing through proxychains when the tool uses UDP, or forgetting that <code>-z</code> sends no payload and some services log it.<br /><b>Evidence:</b> the probe result.
+
+### Step 04 — See what is listening locally
+
+<b>Priority:</b> Core · <b>Run on:</b> target or Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ss -tlnp
+ss -tulpn
+```
+
+<b>Look for:</b> the port bound to <code>0.0.0.0</code> vs <code>127.0.0.1</code>.<br /><b>Decision:</b> bound to <code>127.0.0.1</code> → only local processes can reach it; tunnel in (Tunneling page). Not listening → the service is down.<br /><b>Next:</b> Step 05 or the pivot.<br /><b>Common mistake:</b> starting a listener on <code>127.0.0.1</code> and expecting a remote callback. Bind <code>0.0.0.0</code> or the correct interface.<br /><b>Evidence:</b> the <code>ss</code> line for the port.
+
+## C. Application layer
+
+### Step 05 — Verbose HTTP
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+curl -v http://<TARGET_IP>:<TARGET_PORT>/
+curl -vk https://<TARGET_IP>:<TARGET_PORT>/
+curl -v --resolve <DOMAIN>:<TARGET_PORT>:<TARGET_IP> https://<DOMAIN>:<TARGET_PORT>/
+```
+
+<b>Look for:</b> <code>Connected to …</code>, the request line, response headers, and the status code.<br /><b>Decision:</b> HTTP works but the browser/app does not → vhost or Host header. TLS handshake fails → <code>-k</code> or SNI (use <code>--resolve</code>).<br /><b>Next:</b> the HTTP or Directory & VHost page.<br /><b>Common mistake:</b> reading only the body. <code>-v</code> shows the redirect, the auth challenge, and the exact header causing the failure.<br /><b>Evidence:</b> the <code>-v</code> transcript.
+
+## D. Ground truth
+
+### Step 06 — Capture traffic
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+sudo tcpdump -i <INTERFACE> -nn -A port <TARGET_PORT>
+sudo tcpdump -i <INTERFACE> -nn -w <OUTPUT_FILE> host <TARGET_IP>
+```
+
+<b>Look for:</b> whether packets leave, and whether anything returns.<br /><b>Decision:</b> SYN out, nothing back → filtered/routed wrong. SYN, RST → port closed. SYN, SYN-ACK, then RST → TLS/app mismatch. Nothing at all → wrong interface.<br /><b>Next:</b> fix the layer the capture proves is broken.<br /><b>Common mistake:</b> capturing on <code>eth0</code> while the traffic uses <code>tun0</code>. Confirm with <code>ip route get <TARGET_IP></code>.<br /><b>Evidence:</b> the pcap file, or the filtered output showing the handshake.
+
+### Step 07 — Read the failure correctly
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+| Capture / probe result | Meaning | Next |
+| --- | --- | --- |
+| SYN sent, no reply | Filtered, or wrong route | <code>ip route get</code>, try the pivot |
+| SYN → RST | Closed | Wrong port / service down |
+| SYN → SYN-ACK → RST | App or TLS mismatch | <code>curl -v</code>, <code>-k</code>, SNI |
+| Connection open, no data | Protocol mismatch | Try the right client |
+| Works locally, fails remotely | Bound to 127.0.0.1 | Rebind / tunnel |
+| Works from pivot, not Kali | Routing between Kali and pivot | Check the tunnel |
+
+<b>Common mistake:</b> jumping to the exploit when the handshake already shows the port is closed. Read the four packets first.
+
+## E. Proxy and pivot checks
+
+### Step 08 — Verify the path through a proxy
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+proxychains4 -q curl -v http://<INTERNAL_IP>/
+proxychains4 -q nc -nv <INTERNAL_IP> <TARGET_PORT>
+nmap -Pn -sT -p <TARGET_PORT> <INTERNAL_IP>
+```
+
+<b>Look for:</b> responses that only appear when the proxy is in use.<br /><b>Decision:</b> <code>curl</code> fails but <code>nc</code> works → application issue, not routing. Both fail → the pivot cannot reach the target; test from the pivot itself.<br /><b>Next:</b> fix the tunnel (Tunneling & Pivoting).<br /><b>Common mistake:</b> using <code>-sS</code> or ICMP through a SOCKS proxy. Use <code>-sT -Pn</code>.<br /><b>Evidence:</b> the proxied transcript.
+
+### Step 09 — Systematic checklist
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+1. <code>ip a</code> — am I on the right network?
+2. <code>ip route get <TARGET_IP></code> — which interface will it use?
+3. <code>getent hosts</code> — does the name resolve to the IP I expect?
+4. <code>nc -nv</code> — is the port actually open?
+5. <code>ss -tlnp</code> — is my listener bound where I think?
+6. <code>curl -v</code> — what does the application say?
+7. <code>tcpdump</code> — what actually crosses the wire?
+8. Only then revisit the exploit.
+
+<b>Rule:</b> never change the exploit until one of these eight tests has failed. Guessing wastes more time than measuring.
+
+## F. Decision tree
+
+| Symptom | Start at | Do <b>not</b> |
+| --- | --- | --- |
+| Nothing responds at all | Step 01 | Reinstall the tool |
+| Name does not resolve | Step 02 | Hard-code and forget the cause |
+| Port "closed" | Step 03 | Assume the host is down |
+| Callback never arrives | Step 04 | Regenerate the payload |
+| HTTP 400/404/redirect | Step 05 | Blame the exploit |
+| Works locally, fails remotely | Step 04 (bind address) | Add firewall rules blindly |
+| Only through a proxy | Step 08 | Use a SYN scan |
+| Everything looks fine | Step 06 (capture) | Keep retrying |
+
+## G. Evidence to preserve
+
+- The failing command and its full output.
+- The layer that was actually broken, and the test that proved it.
+- Any routing or <code>/etc/hosts</code> change you made (so you can undo it).
+- The pcap if the failure was intermittent.
+
+## H. Related pages
+
+- <mention url="https://app.notion.com/p/4011e51238b581669e09d615530aa92a" /> — scanning that avoids false negatives
+- <mention url="https://app.notion.com/p/4011e51238b581469eede872cfb47724" /> — proxy path and binds
+- <mention url="https://app.notion.com/p/4011e51238b581649211c0c5db9c94f8" /> — header-level diagnosis
+- <mention url="https://app.notion.com/p/4011e51238b581b49f33e6d71a304549" /> — resolvers and records
+- OSCP Attack Workflow — Start Here
+
+## I. References
+
+- tcpdump: [https://www.tcpdump.org/manpages/tcpdump.1.html](https://www.tcpdump.org/manpages/tcpdump.1.html)
+- curl: [https://curl.se/docs/manpage.html](https://curl.se/docs/manpage.html)
+- proxychains-ng: [https://github.com/rofl0r/proxychains-ng](https://github.com/rofl0r/proxychains-ng)
+
+## J. Verification note
+
+<code>ping</code>, <code>ip</code>, <code>ss</code>, <code>dig</code>, <code>getent</code>, <code>curl</code>, <code>nc</code> and <code>tcpdump</code> are installed here and their flags were checked locally, so those commands are <b>Syntax Checked</b>. No failure scenario was reproduced against a live target for this page, so no step is <b>Lab Tested</b>; the packet-level interpretations are documented behaviour, not observed captures from this session.

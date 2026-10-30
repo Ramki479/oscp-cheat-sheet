@@ -1,0 +1,470 @@
+
+> <b>Purpose:</b> find what a web server hides — directories and files on a host you already know, and <b>other hostnames</b> served by the same IP. These are different questions with different tools; mixing them wastes the most time of any enumeration step.
+
+## Two different questions
+
+<table header-row="true">
+<colgroup>
+<col width="247.5625" />
+<col width="204.984375" />
+<col width="257" />
+<col width="200" />
+</colgroup>
+<tr>
+<td>
+Question
+</td>
+<td>
+Technique
+</td>
+<td>
+Signal
+</td>
+<td>
+Tools
+</td>
+</tr>
+<tr>
+<td>
+What paths exist on <b>this</b> host?
+</td>
+<td>
+path fuzzing: <code>http://IP/FUZZ</code>
+</td>
+<td>
+different status/size per path
+</td>
+<td>
+ffuf, gobuster dir, feroxbuster
+</td>
+</tr>
+<tr>
+<td>
+Which <b>hostnames</b> does this IP serve?
+</td>
+<td>
+<code>Host: FUZZ.<DOMAIN></code> header
+</td>
+<td>
+response differs from the default vhost
+</td>
+<td>
+ffuf, gobuster vhost
+</td>
+</tr>
+<tr>
+<td>
+Which names exist in <b>DNS</b>?
+</td>
+<td>
+resolve <code>FUZZ.<DOMAIN></code>
+</td>
+<td>
+an A record appears
+</td>
+<td>
+gobuster dns, dnsx, ffuf
+</td>
+</tr>
+</table>
+
+<b>Subdomain vs vhost.</b> DNS enumeration asks the resolver, "does this name exist?" Vhost enumeration asks the web server, "do you serve a different site for this <code>Host:</code> header?" A name can be a working vhost with <b>no</b> DNS record, and a DNS name can point at a server that only shows its default page. On the exam, always run <b>both</b> when you see a domain.
+
+## A. Setup and baseline
+
+### Step 01 — Pick a wordlist
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ls /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt
+ls /usr/share/seclists/Discovery/Web-Content/raft-small-words.txt
+ls /usr/share/wordlists/dirb/common.txt
+```
+
+<b>Look for:</b> the expected line counts (raft-medium-directories ≈ 30k, raft-small-words ≈ 43k, dirb common ≈ 4.6k).<br /><b>Decision:</b> first pass → <code>dirb/common.txt</code> (fast). Solid pass → <code>raft-medium-directories.txt</code>. Vhosts → <code>raft-small-words.txt</code> or a subdomain list.<br /><b>Next:</b> Step 02.<br /><b>Common mistake:</b> starting a 30k-word scan before a 4.6k one. The first pass finds the obvious app; the big list is for when it does not.<br /><b>Evidence:</b> the wordlist path and line count.
+
+### Step 02 — Baseline the server
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+curl -sI http://<TARGET_IP>/
+curl -s http://<TARGET_IP>/robots.txt
+curl -s -o /dev/null -w "%{http_code} %{size_download}\n" http://<TARGET_IP>/thisdoesnotexist-<RANDOM>
+```
+
+<b>Look for:</b> server header, redirects, <code>robots.txt</code> entries, and the <b>404 size</b> — the number you will filter on.<br /><b>Decision:</b> a 404 returns a custom page with a stable size → add <code>-fs <size></code>. A wildcard returns 200 for everything → Step 15.<br /><b>Next:</b> Step 03.<br /><b>Common mistake:</b> skipping the baseline and then filtering by status code alone. Custom 404 pages commonly return 200.<br /><b>Evidence:</b> the 404 status and size.
+
+## B. Directory enumeration
+
+### Step 03 — ffuf (fast, flexible)
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ffuf -u http://<TARGET_IP>/FUZZ -w <WORDLIST> -mc 200,204,301,302,307,401,403 -ac
+```
+
+<b>Look for:</b> hits with a size different from the baseline, and <code>301</code> redirects that reveal a directory.<br /><b>Decision:</b> a directory appears → re-run with <code>FUZZ</code> inside it (<code>-u http://<TARGET_IP>/found/FUZZ</code>). A file appears → fetch it. Nothing → Step 04 with a bigger list.<br /><b>Next:</b> Step 06 for extensions, Step 09 for authenticated paths.<br /><b>Common mistake:</b> leaving <code>-ac</code> off a wildcard server — every word becomes a hit and the output is useless.<br /><b>Evidence:</b> the ffuf output with the matched sizes.
+
+### Step 04 — gobuster dir
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+gobuster dir -u http://<TARGET_IP> -w <WORDLIST> -x php,txt,html -t 30
+```
+
+<b>Look for:</b> <code>Status: 200 [Size: ...]</code> lines and <code>Found</code> redirects.<br /><b>Decision:</b> gobuster is faster and quieter than ffuf for a plain directory pass; keep it for the first sweep, ffuf for filtering tricks.<br /><b>Next:</b> Step 06.<br /><b>Common mistake:</b> forgetting <code>-x</code> — without extensions you miss <code>index.php</code>, <code>config.txt</code>, <code>backup.html</code>.<br /><b>Evidence:</b> the gobuster summary and hits.
+
+### Step 05 — feroxbuster (recursive, resumable)
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+feroxbuster -u http://<TARGET_IP> -w <WORDLIST> -x php,html,txt -o <OUTPUT_FILE>
+```
+
+<b>Look for:</b> a tree of found directories, automatically recursed, and a written report at <code><OUTPUT_FILE></code>.<br /><b>Decision:</b> a deep app (many nested dirs) → feroxbuster saves the most time. Shallow app → gobuster is enough.<br /><b>Next:</b> review the output file for <code>200</code>/<code>301</code> entries.<br /><b>Common mistake:</b> letting recursion run unbounded on a large app. Add <code>--depth 2</code> and <code>-t 30</code> to stay in control.<br /><b>Evidence:</b> the <code><OUTPUT_FILE></code> contents.
+
+### Step 06 — Extensions and recursion
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ffuf -u http://<TARGET_IP>/FUZZ -w <WORDLIST> -e .php,.txt,.html,.bak -t 40
+ffuf -u http://<TARGET_IP>/FUZZ -w <WORDLIST> -recursion -recursion-depth 2
+gobuster dir -u http://<TARGET_IP> -w <WORDLIST> -x php,aspx,jsp,html,txt
+feroxbuster -u http://<TARGET_IP> -w <WORDLIST> --depth 2 -x php,html
+```
+
+<b>Look for:</b> source backups (<code>.bak</code>, <code>.old</code>, <code>~</code>), config files (<code>.env</code>, <code>.git/HEAD</code>), and admin panels.<br /><b>Decision:</b> the stack is known (PHP, [ASP.NET](http://ASP.NET), Java) → match the extension list to it instead of guessing all.<br /><b>Next:</b> Step 07 if the output is noisy.<br /><b>Common mistake:</b> adding extensions to <b>every</b> word, which multiplies requests by the number of extensions. Use a file-oriented list instead.<br /><b>Evidence:</b> the hits per extension.
+
+### Step 06a — HTTPS with a self-signed certificate
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+gobuster dir -k -u https://<TARGET_IP> -w <WORDLIST> -x php,txt,html
+ffuf -u https://<TARGET_IP>/FUZZ -w <WORDLIST> -k -ac
+feroxbuster -u https://<TARGET_IP> -w <WORDLIST> -k
+```
+
+<b>Look for:</b> the same hits over TLS that you saw over HTTP.<br /><b>Decision:</b> TLS fails entirely → the service may use SNI (Step 16) or a non-standard port; confirm with <code>curl -k</code> first.<br /><b>Next:</b> Step 07.<br /><b>Common mistake:</b> letting the scanner abort on certificate errors. Labs almost always use self-signed certificates — <code>-k</code> is the normal case, not an exception.<br /><b>Evidence:</b> the HTTPS hit list.
+
+### Step 07 — Remove false positives
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ffuf -u http://<TARGET_IP>/FUZZ -w <WORDLIST> -fs <BASELINE_SIZE>
+ffuf -u http://<TARGET_IP>/FUZZ -w <WORDLIST> -fc 404,429
+gobuster dir -u http://<TARGET_IP> -w <WORDLIST> -b ""
+```
+
+<b>Look for:</b> a short, readable hit list.<br /><b>Decision:</b> many identical sizes → filter by size (<code>-fs</code>). Many different 404s → filter by code. gobuster hides 404 by default; <code>-b ""</code> shows every code.<br /><b>Next:</b> triage with the table in Section D.<br /><b>Common mistake:</b> filtering too aggressively and hiding the real hit. Always keep one unfiltered run for comparison.<br /><b>Evidence:</b> the filter used and the resulting hits.
+
+### Step 08 — <code>-mc all</code> and the 403/500 problem
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ffuf -u http://<TARGET_IP>/FUZZ -w <WORDLIST> -mc all -ac
+ffuf -u http://<TARGET_IP>/FUZZ -w <WORDLIST> -mc all -fs <BASELINE_SIZE>
+```
+
+<b>What it actually does:</b> ffuf's default matcher is <code>200-299,301,302,307,401,403,405,500</code> — <b>403 and 500 already appear by default</b>. <code>-mc all</code> does not "unhide" them; it adds the codes outside that list (<code>300, 304, 400, 402, 406, 409, 418, 429, 503</code>…).<br /><b>When it matters:</b> the app answers <code>429</code> when it rate-limits you (a WAF telling you it noticed), <code>503</code> when a backend is down but the path exists, or <code>304</code> on conditional requests. Those are invisible without <code>-mc all</code>.<br /><b>For 403/500 specifically:</b> the fix is <b>not</b> the status code, it is the <b>baseline</b>. Compare <code>-fs</code> against a known-missing path, or filter the false-positive class with <code>-fc 403,500</code> and inspect what remains.<br /><b>Next:</b> Section D for 403 bypass attempts.<br /><b>Common mistake:</b> adding <code>-mc all</code> and drowning in 10,000 hits. Pair it with <code>-ac</code> or a size filter, every time.<br /><b>Evidence:</b> the exact matcher/filter used.
+
+### Step 09 — Authenticated and header-based fuzzing
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ffuf -u http://<TARGET_IP>/FUZZ -w <WORDLIST> -b "SESSION=<COOKIE_VALUE>" -ac
+ffuf -u http://<TARGET_IP>/FUZZ -w <WORDLIST> -H "Authorization: Bearer <TOKEN>" -ac
+```
+
+<b>Look for:</b> paths that only exist for a logged-in user — admin panels, API routes, user data.<br /><b>Decision:</b> you have a cookie → always re-run the discovery pass authenticated. The unauthenticated result is only half the map.<br /><b>Next:</b> Step 10 for parameters.<br /><b>Common mistake:</b> forgetting that the cookie value expires mid-scan; re-login and restart, or the whole run is noise.<br /><b>Evidence:</b> the authenticated hit list.
+
+### Step 10 — Parameter and POST fuzzing
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ffuf -u "http://<TARGET_IP>/login.php?FUZZ=test" -w <WORDLIST> -fs <BASELINE_SIZE>
+ffuf -u http://<TARGET_IP>/login.php -X POST -d "username=admin&password=FUZZ" -w <WORDLIST> -fc 200
+```
+
+<b>Look for:</b> a parameter name that changes the response, or a login that returns a different status/length on success.<br /><b>Decision:</b> a hidden parameter appears → test it for injection. A login differential appears → brute force with the Passwords page.<br /><b>Next:</b> the relevant vulnerability page.<br /><b>Common mistake:</b> assuming a 302 is failure. <code>-fc 200</code> filters the <i>failure</i> page when failure returns 200 — verify both directions first.<br /><b>Evidence:</b> the request and the differing response.
+
+### Step 11 — API and JSON endpoints
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Documented
+
+```bash
+ffuf -u http://<TARGET_IP>/api/FUZZ -w <WORDLIST> -mc all -ac
+ffuf -u http://<TARGET_IP>/api/FUZZ -w <WORDLIST> -X POST -H "Content-Type: application/json" -d '{}' -mc all -ac
+```
+
+<b>Look for:</b> <code>200</code> with JSON, <code>401</code>/<code>403</code> on real routes, <code>405</code> meaning the route exists but needs another method.<br /><b>Decision:</b> <code>405</code> → re-run with <code>-X POST</code>/<code>-X PUT</code>. <code>401</code> → the route exists; find a token.<br /><b>Next:</b> inspect the schema, then test the parameters.<br /><b>Common mistake:</b> treating <code>404</code> JSON as "no API". Many frameworks return 404 with a JSON body for unknown routes — compare bodies, not just codes.<br /><b>Evidence:</b> the routes and their responses.
+
+## C. Virtual host and subdomain enumeration
+
+### Step 12 — Virtual hosts with ffuf
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+curl -s -o /dev/null -w "%{size_download}\n" -H "Host: doesnotexist.<DOMAIN>" http://<TARGET_IP>/
+ffuf -u http://<TARGET_IP>/ -H "Host: FUZZ.<DOMAIN>" -w <WORDLIST> -fs <DEFAULT_VHOST_SIZE>
+```
+
+<b>Look for:</b> hosts whose response size differs from the default vhost.<br /><b>Decision:</b> a hit → add <code><DOMAIN> <TARGET_IP></code> to <code>/etc/hosts</code> and browse that hostname directly. No hits → Step 14 (DNS names may still exist).<br /><b>Next:</b> enumerate the new host from Step 03.<br /><b>Common mistake:</b> omitting <code>-fs</code>. A default vhost answers <b>every</b> Host header with 200 and a fixed size; without the filter you get 43,000 "hits".<br /><b>Evidence:</b> the baseline size and the differing hosts.
+
+### Step 13 — Virtual hosts with gobuster
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+gobuster vhost -u http://<DOMAIN> -w <WORDLIST> --append-domain
+```
+
+<b>Look for:</b> <code>Found: dev.<DOMAIN> Status: 200 [Size: ...]</code>.<br /><b>Decision:</b> gobuster auto-filters the baseline wildcard, which makes it the quicker first vhost pass; confirm hits with Step 12.<br /><b>Next:</b> browse the found host.<br /><b>Common mistake:</b> pointing <code>-u</code> at an IP while using <code>--append-domain</code> — the Host header becomes <code>word.<IP></code> and nothing matches. Use the domain.<br /><b>Evidence:</b> the found vhosts and their sizes.
+
+### Step 14 — DNS subdomain enumeration
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+gobuster dns -d <DOMAIN> -w <WORDLIST> -r <DOMAIN_CONTROLLER_IP>
+ffuf -u http://FUZZ.<DOMAIN>/ -w <WORDLIST> -fc 404
+```
+
+<b>Look for:</b> names that resolve, and names that resolve <b>and</b> serve content.<br /><b>Decision:</b> a name resolves → add it to <code>/etc/hosts</code>, then run Step 03 against it. A name resolves but shows the default page → still note it; it may be a different app on another port.<br /><b>Next:</b> re-run directory enumeration per host.<br /><b>Common mistake:</b> using an internet resolver for an internal domain (<code>-r 8.8.8.8</code>). Point <code>-r</code> at the internal DNS server (often the DC).<br /><b>Evidence:</b> the resolved names and their IPs.
+
+### Step 15 — Wildcards (DNS and vhost)
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+dig +short anything.<DOMAIN> @<DOMAIN_CONTROLLER_IP>
+curl -s -o /dev/null -w "%{http_code} %{size_download}\n" -H "Host: anything.<DOMAIN>" http://<TARGET_IP>/
+```
+
+<b>Look for:</b> a wildcard A record, or a fixed-size 200 for any Host.<br /><b>Decision:</b> wildcard DNS → filter known IPs; wildcard vhost → always filter by size. Note the wildcard in your report — it explains why brute force "found" thousands of hosts.<br /><b>Next:</b> Step 12 with the measured size.<br /><b>Common mistake:</b> reporting the wildcard as a discovery. It is a server configuration, not a host.<br /><b>Evidence:</b> the wildcard response and the filter that neutralised it.
+
+### Step 16 — HTTPS and SNI vhosts
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Documented
+
+```bash
+ffuf -u https://<TARGET_IP>/ -H "Host: FUZZ.<DOMAIN>" -w <WORDLIST> -k -fs <DEFAULT_VHOST_SIZE>
+curl -k --resolve <DOMAIN>:443:<TARGET_IP> https://<DOMAIN>/
+```
+
+<b>Look for:</b> a certificate or page that differs per hostname.<br /><b>Decision:</b> the vhost is selected by <b>SNI</b>, not the Host header → use <code>--resolve</code> with curl, or <code>ffuf</code> with a URL containing the hostname and a hosts-file entry.<br /><b>Next:</b> browse the SNI-selected site.<br /><b>Common mistake:</b> sending <code>Host:</code> over HTTPS without SNI and concluding the vhost does not exist. Modern servers frequently split on SNI.<br /><b>Evidence:</b> the certificate CN/SAN and the page.
+
+## D. Reading the results
+
+<table header-row="true">
+<colgroup>
+<col />
+<col />
+<col width="364" />
+</colgroup>
+<tr>
+<td>
+Code
+</td>
+<td>
+Meaning
+</td>
+<td>
+Next action
+</td>
+</tr>
+<tr>
+<td>
+200
+</td>
+<td>
+exists
+</td>
+<td>
+fetch it, read the app
+</td>
+</tr>
+<tr>
+<td>
+204
+</td>
+<td>
+exists, empty body
+</td>
+<td>
+note it; check other methods
+</td>
+</tr>
+<tr>
+<td>
+301 / 302
+</td>
+<td>
+redirect
+</td>
+<td>
+follow it; the target directory is the real hit
+</td>
+</tr>
+<tr>
+<td>
+307 / 308
+</td>
+<td>
+redirect, method preserved
+</td>
+<td>
+same, but POST bodies survive
+</td>
+</tr>
+<tr>
+<td>
+401
+</td>
+<td>
+auth required
+</td>
+<td>
+try default creds, then the credential you hold
+</td>
+</tr>
+<tr>
+<td>
+403
+</td>
+<td>
+exists, forbidden
+</td>
+<td>
+bypass attempts below; also try the path with <code>/</code> and with an extension
+</td>
+</tr>
+<tr>
+<td>
+405
+</td>
+<td>
+route exists, wrong method
+</td>
+<td>
+re-run with <code>-X POST</code>/<code>-X PUT</code>
+</td>
+</tr>
+<tr>
+<td>
+429
+</td>
+<td>
+rate limited
+</td>
+<td>
+slow down (<code>-rate 10</code>, <code>-t 5</code>) — the WAF is watching
+</td>
+</tr>
+<tr>
+<td>
+500
+</td>
+<td>
+server error, often exists
+</td>
+<td>
+compare size with baseline; test inputs
+</td>
+</tr>
+<tr>
+<td>
+503
+</td>
+<td>
+backend unavailable
+</td>
+<td>
+path may exist; retry later
+</td>
+</tr>
+</table>
+
+<b>403 bypass attempts (Documented):</b>
+
+```bash
+curl -s -H "X-Original-URL: /admin" http://<TARGET_IP>/
+curl -s --path-as-is http://<TARGET_IP>/admin/..;/
+curl -s http://<TARGET_IP>/admin%2f
+curl -s http://<TARGET_IP>/ADMIN/
+```
+
+<b>Look for:</b> a 200 where the direct request was 403.<br /><b>Common mistake:</b> spending 20 minutes on 403 bypasses before checking whether the same content is reachable at another vhost or port.
+
+## E. Decision tree
+
+| Situation | Do this | Do <b>not</b> |
+| --- | --- | --- |
+| Fresh web server, no paths known | Step 03 with dirb/common | Start with a 30k list |
+| ffuf returns everything | Baseline (Step 02) + <code>-fs</code> | Add <code>-mc all</code> |
+| Only 403/500 responses | Size baseline + <code>-fc</code> (Step 08) | Assume the paths are fake |
+| Deep application | feroxbuster recursion (Step 05) | Scan by hand |
+| A domain is in scope | Both vhost (Step 12) <b>and</b> DNS (Step 14) | Pick one and stop |
+| Every Host header returns 200 | Wildcard filter (Step 15) | Report thousands of hosts |
+| HTTPS vhosts behave oddly | SNI check (Step 16) | Blame the tool |
+| Found a hostname | Add to <code>/etc/hosts</code>, restart at Step 03 | Only screenshot the name |
+
+## F. Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| ffuf: <code>all words match</code> | Wildcard / custom 404 | <code>-ac</code> or <code>-fs</code> |
+| gobuster: <code>the server returns a status code that matches the provided options for non existing urls</code> | Wildcard | <code>--wildcard</code> or switch to ffuf |
+| feroxbuster: thousands of hits | Wildcard, auto-filter failed | <code>-w</code> smaller list, <code>--filter-size</code> |
+| Vhost scan finds nothing | Wrong base domain or IP | <code>-u http://<DOMAIN></code>  • <code>--append-domain</code> |
+| DNS scan finds nothing | Wrong resolver | <code>-r <DOMAIN_CONTROLLER_IP></code> |
+| Tool extremely slow | Through a pivot / many threads | Lower <code>-t</code>, raise <code>--timeout</code> |
+| 429 everywhere | Rate limit / WAF | <code>-rate 5</code>, randomise <code>-H User-Agent</code> |
+
+<b>Pivoting variant.</b> All three tools are TCP-only and work through a proxy, but proxychains serialises connections — reduce concurrency and expect minutes, not seconds:
+
+```bash
+proxychains4 ffuf -u http://<TARGET_IP>/FUZZ -w <WORDLIST> -t 5 -timeout 20 -ac
+proxychains4 gobuster dir -u http://<TARGET_IP> -w <WORDLIST> -t 5
+proxychains4 feroxbuster -u http://<TARGET_IP> -w <WORDLIST> -t 5
+```
+
+Alternatively run the scan <b>from</b> the pivot host (upload the wordlist, use <code>curl</code> loops) and pull the results back. If the target is only reachable through a SOCKS proxy and DNS is internal, add the hostname to <code>/etc/hosts</code> on Kali pointing at the target IP.
+
+## G. Evidence to preserve
+
+- The exact command, wordlist path, and filter used.
+- The baseline 404 status and size.
+- The hit list, and for each hit the status, size, and a <code>curl -sI</code> of the path.
+- Vhost results <b>with</b> the default-vhost size they were compared against.
+- A note of any wildcard found, so the numbers are explainable later.
+
+## H. Related pages
+
+- <mention url="https://app.notion.com/p/4011e51238b581649211c0c5db9c94f8" /> — headers, methods, and manual requests
+- <mention url="https://app.notion.com/p/4011e51238b581b49f33e6d71a304549" /> — zone transfer and record types
+- [Active Directory — Complete Command Reference](https://app.notion.com/p/4011e51238b58122ac9bc9c86520d03e)
+- [OSCP Attack Workflow — Start Here](https://app.notion.com/p/4011e51238b581c5ad53c7704de0ebc5)
+- Exam Checklist — OSCP+
+
+## I. References
+
+- ffuf: [https://github.com/ffuf/ffuf](https://github.com/ffuf/ffuf)
+- gobuster: [https://github.com/OJ/gobuster](https://github.com/OJ/gobuster)
+- feroxbuster: [https://github.com/epi052/feroxbuster](https://github.com/epi052/feroxbuster)
+- SecLists: [https://github.com/danielmiessler/SecLists](https://github.com/danielmiessler/SecLists)
+
+## J. Verification note
+
+<code>ffuf</code>, <code>gobuster</code> 3.8.2 and <code>feroxbuster</code> 2.13.1 are installed on this host; their flags (<code>-mc</code>, <code>-ac</code>, <code>-fs</code>, <code>-fc</code>, <code>-e</code>, <code>--append-domain</code>) were checked against their help output, so those commands are <b>Syntax Checked</b>. <code>dnsx</code> is not installed, so this page uses <code>gobuster dns</code> instead. 403-bypass requests, SNI behaviour and JSON API fuzzing were not executed against a live target and are marked <b>Documented</b>. No step is <b>Lab Tested</b>.

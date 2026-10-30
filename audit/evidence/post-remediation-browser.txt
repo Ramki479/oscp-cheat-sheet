@@ -1,0 +1,34 @@
+# AUD-12 FTP step
+badges: ["Core","kali","Syntax Checked"]
+code blocks: 2 | manual check present: true
+fields: ["Look for","Failure path","Decision","Next","Common mistake","Evidence"]
+outcome table: {"head":["Result","What it means","Next action"],"rows":3,"text":"ResultWhat it meansNext actionAnonymous FTP login allowedAnonymous access confirmedStep 03 for the banner, then Step 04 to list filesAnonymous FTP login denied, or the manual check prints 530Anonymous access is really refusedStop anonymous "}
+failure field says inconclusive: true
+
+# AUD-13 BloodHound GenericAll step
+badges: ["Core","kali","Syntax Checked"]
+command: ["# GenericAll includes ResetPassword: this is the Step 08 command, reused\nnet rpc password \"<TARGET_USER>\" -U \"<DOMAIN>/<USERNAME>%<PASSWORD>\" -S <DOMAIN_CONTROLLER_IP>","<TARGET_USER>","<DOMAIN>","<USERNAME>","<PASSWORD>","<DOMAIN_CONTROLLER_IP>"]
+points back to Step 08: true
+next field present: true
+
+# AUD-14 tool reference page
+title: 🧰Tool Reference — Executables, Packages & Verification Status | kicker: Workflow & Exam | reachable from nav: true
+sections: ["Verification status","Enumeration & Network","SMB & Remote Execution","Active Directory & Kerberos","Web & TLS","Credentials & Cracking","Shells, Transfer & Pivoting","Windows Host Tools","Names that trip people up","Assumed present"]
+table sizes: [{"head":["Status","What it means","Steps"],"rows":5},{"head":["Tool","Run as","Package / install","OS","Privileges","Compatibility notes","Used on"],"rows":14},{"head":["Tool","Run as","Package / install","OS","Privileges","Compatibility notes","Used on"],"rows":5},{"head":["Tool","Run as","Package / install","OS","Privileges","Compatibility notes","Used on"],"rows":9},{"head":["Tool","Run as","Package / install","OS","Privileges","Compatibility notes","Used on"],"rows":13},{"head":["Tool","Run as","Package / install","OS","Privileges","Compatibility notes","Used on"],"rows":5},{"head":["Tool","Run as","Package / install","OS","Privileges","Compatibility notes","Used on"],"rows":19},{"head":["Tool","Run as","Package / install","OS","Privileges","Compatibility notes","Used on"],"rows":22}]
+status legend rows: ["Lab Tested","Simulated","Syntax Checked","Environment Dependent","Documented"]
+names sshpass: true | names secretsdump.py: true
+
+# Status taxonomy in the UI
+filter options: ["all","Lab Tested","Simulated","Syntax Checked","Environment Dependent","Documented"]
+environment-dependent filter on SMB: {"visible":0,"count":"0 of 21 steps"}
+
+# AUD-17 machine-notes template
+tables on page: 7 | paragraphs starting with a pipe: 0
+proof rows: ["local.txt/home/<USER>/local.txt<HASH>cat<file>.png","proof.txt/root/proof.txt<HASH>cat<file>.png"]
+
+# TOOL REFERENCE LAYOUT
+1440px: {"overflow":0,"tables":8,"scrollable":0}
+390px : {"overflow":0,"tables":8,"scrollable":7}
+
+# CONSOLE / NETWORK
+consoleErrors=0 failedRequests=0 external=0

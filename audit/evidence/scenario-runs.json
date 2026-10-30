@@ -1,0 +1,532 @@
+[
+  {
+    "scenario": "S01",
+    "stepId": "nmap-01",
+    "label": "connectivity check (localhost instead of fictional 10.10.10.10)",
+    "site_command": "ip a; ip route get <TARGET_IP>; ping -c 3 <TARGET_IP>",
+    "executed_command": "ip a | head -5; ip route get 127.0.0.1; ping -c 3 127.0.0.1",
+    "exit": 0,
+    "duration_ms": 2054,
+    "output": "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000\n    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00\n    inet 127.0.0.1/8 scope host lo\n       valid_lft forever preferred_lft forever\n    inet6 ::1/128 scope host noprefixroute \nlocal 127.0.0.1 dev lo table local src 127.0.0.1 uid 1000 \n    cache <local> \nPING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.\n64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.033 ms\n64 bytes from 127.0.0.1: icmp_seq=2 ttl=64 time=0.088 ms\n64 bytes from 127.0.0.1: icmp_seq=3 ttl=64 time=0.088 ms\n\n--- 127.0.0.1 ping statistics ---\n3 packets transmitted, 3 received, 0% packet loss, time 2077ms\nrtt min/avg/max/mdev = 0.033/0.069/0.088/0.025 ms"
+  },
+  {
+    "scenario": "S01",
+    "stepId": "nmap-02",
+    "label": "create evidence dir",
+    "site_command": "mkdir -p <OUTPUT_DIR> && cd <OUTPUT_DIR>",
+    "executed_command": "mkdir -p /tmp/oscp-lab/out && cd /tmp/oscp-lab/out && pwd",
+    "exit": 0,
+    "duration_ms": 10,
+    "output": "/tmp/oscp-lab/out"
+  },
+  {
+    "scenario": "S01",
+    "stepId": "nmap-03",
+    "label": "ping sweep on loopback /24",
+    "site_command": "nmap -sn <TARGET_IP>/24 -oN <OUTPUT_FILE>",
+    "executed_command": "nmap -sn 127.0.0.1/24 -oN /tmp/oscp-lab/out/sweep.txt",
+    "exit": 0,
+    "duration_ms": 36062,
+    "output": "Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:12 +0530\nNmap scan report for 127.0.0.0\nHost is up.\nNmap scan report for localhost (127.0.0.1)\nHost is up.\nNmap scan report for 127.0.0.2\nHost is up.\nNmap scan report for 127.0.0.3\nHost is up.\nNmap scan report for 127.0.0.4\nHost is up.\nNmap scan report for 127.0.0.5\nHost is up.\nNmap scan report for 127.0.0.6\nHost is up.\nNmap scan report for 127.0.0.7\nHost is up.\nNmap scan report for 127.0.0.8\nHost is up.\nNmap scan report for 127.0.0.9\nHost is up.\nNmap scan report for 127.0.0.10\nHost is up.\nNmap scan report for 127.0.0.11\nHost is up.\nNmap scan report for 127.0.0.12\nHost is up.\nNmap scan report for 127.0.0.13\nHost is up.\nNmap scan report for 127.0.0.14\nHost is up.\nNmap scan report for 127.0.0.15\nHost is up.\nNmap scan report for 127.0.0.16\nHost is up.\nNmap scan report for 127.0.0.17\nHost is up.\nNmap scan report for 127.0.0.18\nHost is up.\nNmap scan report for 127.0.0.19\nHost is up.\nNmap scan report for 127.0.0.20\nHost is up.\nNmap scan report for 127.0.0.21\nHost is up.\nNmap scan report for 127.0.0.22\nHost is up.\nNmap scan report for 127.0.0.23\nHost is up.\nNmap scan report for 127.0.0.24\nHost is up.\nNmap scan report for 127.0.0.25\nHost is up.\nNmap scan report for 127.0.0.26\nHost is up.\nNmap scan report for 127.0.0.27\nHost is up.\nNmap scan report for 127.0.0.28\nHost is up.\nNmap scan report for 127.0.0.29\nHost is up.\nNmap scan report for 127.0.0.30\nHost is up.\nNmap scan report for 127.0.0.31\nHost is up.\nNmap scan report for 127.0.0.32\nHost is up.\nNmap scan report for 127.0.0.33\nHost is up.\nNmap scan report for 127.0.0.34\nHost is up.\nNmap scan report for 127.0.0.35\nHost is up.\nNmap scan report for 127.0.0.36\nHost is up.\nNmap scan report for 127.0.0.37\nHost is up.\nNmap scan report for 127.0.0.38\nHost is up.\nNmap scan report for 127.0.0.39\nHost is up.\nNmap scan report for 127.0.0.40\nHost is up.\nNmap scan report for 127.0.0.41\nHost is up.\nNmap scan report for 127.0.0.42\nHost is up.\nNmap scan report for 127.0.0.43\nHost is up.\nNmap scan report for 127.0.0.44\nHost is up.\nNmap scan report for 127.0.0.45\nHost is up.\nNmap scan report for 127.0.0.46\nHost is up.\nNmap scan report for 127.0.0.47\nHost is up.\nNmap scan report for 127.0.0.48\nHost is up.\nNmap scan report for 127.0.0.49\nHost is up.\nNmap scan report for 127.0.0.50\nHost is up.\nNmap scan report for 127.0.0.51\nHost is up.\nNmap scan report for 127.0.0.52\nHost is up.\nNmap scan report for 127.0.0.53\nHost is up.\nNmap scan report for 127.0.0.54\nHost is up.\nNmap scan re"
+  },
+  {
+    "scenario": "S01",
+    "stepId": "nmap-06",
+    "label": "targeted version/script scan against local services",
+    "site_command": "sudo nmap -sCV -p <TARGET_PORT> -oA <OUTPUT_FILE> <TARGET_IP>",
+    "executed_command": "nmap -sCV -p22,139,445,2121,8443 -oA /tmp/oscp-lab/out/local 127.0.0.1",
+    "exit": "timeout/err",
+    "duration_ms": 123950,
+    "output": "Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:12 +0530\n\n[signal SIGTERM]"
+  },
+  {
+    "scenario": "S01",
+    "stepId": "nmap-04",
+    "label": "negative: closed port (site command uses sudo -sS, unavailable)",
+    "site_command": "sudo nmap -sS -T4 -oN <OUTPUT_FILE> <TARGET_IP>",
+    "executed_command": "nmap -sT -T4 -p1 127.0.0.1",
+    "exit": 0,
+    "duration_ms": 40,
+    "output": "Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:14 +0530\nNmap scan report for localhost (127.0.0.1)\nHost is up (0.0000070s latency).\n\nPORT  STATE  SERVICE\n1/tcp closed tcpmux\n\nNmap done: 1 IP address (1 host up) scanned in 0.02 seconds"
+  },
+  {
+    "scenario": "S01",
+    "stepId": "nmap-06",
+    "label": "missing variable: literal unresolved token in a shell",
+    "site_command": "sudo nmap -sCV -p <TARGET_PORT> -oA <OUTPUT_FILE> <TARGET_IP>",
+    "executed_command": "nmap -sCV -p139,445 <TARGET_IP>",
+    "exit": 2,
+    "duration_ms": 4,
+    "output": "/bin/bash: -c: line 1: syntax error near unexpected token `newline'\n/bin/bash: -c: line 1: `nmap -sCV -p139,445 <TARGET_IP>'"
+  },
+  {
+    "scenario": "S02",
+    "stepId": "http-03",
+    "label": "fetch headers/body from local site server (site assumes :80)",
+    "site_command": "curl -i -sS http://<TARGET_IP>/\ncurl -i -sS -L http://<TARGET_IP>/ -o <OUTPUT_FILE>\ncurl -I -sS https://<TARGET_IP>/ -k",
+    "executed_command": "curl -i -sS http://127.0.0.1:8124/ | head -20",
+    "exit": 0,
+    "duration_ms": 59,
+    "output": "HTTP/1.0 200 OK\r\nServer: SimpleHTTP/0.6 Python/3.14.6\r\nDate: Thu, 29 Oct 2026 12:44:44 GMT\r\nContent-type: text/html\r\nContent-Length: 2766\r\nLast-Modified: Thu, 22 Oct 2026 13:23:01 GMT\r\n\r\n<!doctype html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <meta name=\"color-scheme\" content=\"dark\">\n  <meta name=\"theme-color\" content=\"#0b0f14\">\n  <meta name=\"description\" content=\"Offline-ready OSCP command cheat sheet: pick a service, enter your target once, copy ready-to-run commands.\">\n  <title>OSCP Cheat Sheet</title>\n  <link rel=\"manifest\" href=\"manifest.webmanifest\">\n  <link rel=\"icon\" href=\"icons/icon.svg\" type=\"image/svg+xml\">\n  <link rel=\"stylesheet\" href=\"assets/app.css\">\n</head>"
+  },
+  {
+    "scenario": "S02",
+    "stepId": "http-03",
+    "label": "TLS header request against local self-signed TLS",
+    "site_command": "curl -i -sS http://<TARGET_IP>/\ncurl -i -sS -L http://<TARGET_IP>/ -o <OUTPUT_FILE>\ncurl -I -sS https://<TARGET_IP>/ -k",
+    "executed_command": "curl -I -sS https://127.0.0.1:8443/ -k",
+    "exit": "timeout/err",
+    "duration_ms": 45893,
+    "output": "[signal SIGTERM]"
+  },
+  {
+    "scenario": "S02",
+    "stepId": "http-04",
+    "label": "compare codes/sizes across paths",
+    "site_command": "for p in / /admin /login /api /robots.txt; do\n  printf '%-12s ' \"$p\"; curl -s -o /dev/null -w '%{http_code} %{size_download} %{redirect_url}\\n' \"http://<TARGET_IP>$p\"\ndone",
+    "executed_command": "for p in / /index.html /assets/app.js /nope; do printf '%-16s ' \"$p\"; curl -s -o /dev/null -w '%{http_code} %{size_download} %{redirect_url}\\n' \"http://127.0.0.1:8124$p\"; done",
+    "exit": 0,
+    "duration_ms": 73,
+    "output": "/                200 2766 \n/index.html      200 2766 \n/assets/app.js   200 41144 \n/nope            404 460"
+  },
+  {
+    "scenario": "S02",
+    "stepId": "http-05",
+    "label": "read robots/sitemap/asset hints",
+    "site_command": "curl -sS http://<TARGET_IP>/robots.txt\ncurl -sS http://<TARGET_IP>/sitemap.xml\ncurl -sS http://<TARGET_IP>/ | grep -Eo '(src|href)=\"[^\"]+\"' | sort -u",
+    "executed_command": "curl -sS http://127.0.0.1:8124/robots.txt | head -5; curl -sS http://127.0.0.1:8124/ | grep -Eo '(src|href)=\"[^\"]+\"' | sort -u | head -10",
+    "exit": 0,
+    "duration_ms": 17,
+    "output": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\nhref=\"assets/app.css\"\nhref=\"icons/icon.svg\"\nhref=\"#main\"\nhref=\"manifest.webmanifest\"\nsrc=\"assets/app.js\""
+  },
+  {
+    "scenario": "S02",
+    "stepId": "http-02",
+    "label": "whatweb fingerprint (site assumes :80)",
+    "site_command": "whatweb -a 1 http://<TARGET_IP>/\nwhatweb -a 3 http://<TARGET_IP>/ --no-errors",
+    "executed_command": "whatweb -a 1 http://127.0.0.1:8124/",
+    "exit": 0,
+    "duration_ms": 4300,
+    "output": "\u001b[1m\u001b[34mhttp://127.0.0.1:8124/\u001b[0m [200 OK] \u001b[1mCountry\u001b[0m[\u001b[0m\u001b[22mRESERVED\u001b[0m][\u001b[1m\u001b[31mZZ\u001b[0m], \u001b[1mHTML5\u001b[0m, \u001b[1mHTTPServer\u001b[0m[\u001b[1m\u001b[36mSimpleHTTP/0.6 Python/3.14.6\u001b[0m], \u001b[1mIP\u001b[0m[\u001b[0m\u001b[22m127.0.0.1\u001b[0m], \u001b[1mPython\u001b[0m[\u001b[1m\u001b[32m3.14.6\u001b[0m], \u001b[1mScript\u001b[0m[\u001b[0m\u001b[22mmodule\u001b[0m], \u001b[1mTitle\u001b[0m[\u001b[1m\u001b[33mOSCP Cheat Sheet\u001b[0m]"
+  },
+  {
+    "scenario": "S02",
+    "stepId": "directory-vhost-03",
+    "label": "ffuf content discovery with a small wordlist",
+    "site_command": "ffuf -u http://<TARGET_IP>/FUZZ -w <WORDLIST> -mc 200,204,301,302,307,401,403 -ac",
+    "executed_command": "ffuf -u http://127.0.0.1:8124/FUZZ -w /tmp/oscp-lab/words.txt -mc 200,204,301,302,307,401,403 -ac -s",
+    "exit": 0,
+    "duration_ms": 139,
+    "output": ".htaccessifvGomVu\nindex.html\ndata\nassets/app.js"
+  },
+  {
+    "scenario": "S02",
+    "stepId": "directory-vhost-04",
+    "label": "gobuster dir",
+    "site_command": "gobuster dir -u http://<TARGET_IP> -w <WORDLIST> -x php,txt,html -t 30",
+    "executed_command": "gobuster dir -u http://127.0.0.1:8124 -w /tmp/oscp-lab/words.txt -t 10",
+    "exit": 0,
+    "duration_ms": 243,
+    "output": "===============================================================\nGobuster v3.8.2\nby OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)\n===============================================================\n[+] Url:                     http://127.0.0.1:8124\n[+] Method:                  GET\n[+] Threads:                 10\n[+] Wordlist:                /tmp/oscp-lab/words.txt\n[+] Negative Status codes:   404\n[+] User Agent:              gobuster/3.8.2\n[+] Timeout:                 10s\n===============================================================\nStarting gobuster in directory enumeration mode\n===============================================================\nassets/app.js        (Status: 200) [Size: 41144]\nassets               (Status: 301) [Size: 0] [--> /assets/]\nindex.html           (Status: 200) [Size: 2766]\ndata                 (Status: 301) [Size: 0] [--> /data/]\n===============================================================\nFinished\n==============================================================="
+  },
+  {
+    "scenario": "S02",
+    "stepId": "http-03",
+    "label": "negative: service on a closed port",
+    "site_command": "curl -i -sS http://<TARGET_IP>/\ncurl -i -sS -L http://<TARGET_IP>/ -o <OUTPUT_FILE>\ncurl -I -sS https://<TARGET_IP>/ -k",
+    "executed_command": "curl -i -sS --max-time 4 http://127.0.0.1:9999/",
+    "exit": 7,
+    "duration_ms": 22,
+    "output": "curl: (7) Failed to connect to 127.0.0.1 port 9999 after 0 ms: Could not connect to server"
+  },
+  {
+    "scenario": "S03",
+    "stepId": "smb-01",
+    "label": "confirm SMB version",
+    "site_command": "nmap -sCV -p139,445 <TARGET_IP>",
+    "executed_command": "nmap -sCV -p139,445 127.0.0.1",
+    "exit": 0,
+    "duration_ms": 11361,
+    "output": "Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530\nNmap scan report for localhost (127.0.0.1)\nHost is up (0.000068s latency).\n\nPORT    STATE SERVICE     VERSION\n139/tcp open  netbios-ssn Samba smbd 4\n445/tcp open  netbios-ssn Samba smbd 4\n\nHost script results:\n|_nbstat: NetBIOS name: FILESERVER, NetBIOS user: <unknown>, NetBIOS MAC: <unknown> (unknown)\n| smb2-time: \n|   date: 2026-10-29T12:45:46\n|_  start_date: N/A\n| smb2-security-mode: \n|   3.1.1: \n|_    Message signing enabled but not required\n\nService detection performed. Please report any incorrect results at https://nmap.org/submit/ .\nNmap done: 1 IP address (1 host up) scanned in 11.34 seconds"
+  },
+  {
+    "scenario": "S03",
+    "stepId": "smb-02",
+    "label": "NSE SMB baseline",
+    "site_command": "nmap -p139,445 --script smb-os-discovery,smb-security-mode,smb2-security-mode,smb-enum-shares,smb-enum-users <TARGET_IP>",
+    "executed_command": "nmap -p139,445 --script smb-os-discovery,smb-security-mode,smb2-security-mode,smb-enum-shares,smb-enum-users 127.0.0.1",
+    "exit": 0,
+    "duration_ms": 158,
+    "output": "Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530\nNmap scan report for localhost (127.0.0.1)\nHost is up (0.000075s latency).\n\nPORT    STATE SERVICE\n139/tcp open  netbios-ssn\n445/tcp open  microsoft-ds\n\nHost script results:\n| smb2-security-mode: \n|   3.1.1: \n|_    Message signing enabled but not required\n\nNmap done: 1 IP address (1 host up) scanned in 0.15 seconds"
+  },
+  {
+    "scenario": "S03",
+    "stepId": "smb-03",
+    "label": "dialect and signing",
+    "site_command": "nmap -p445 --script smb2-security-mode,smb2-capabilities <TARGET_IP>",
+    "executed_command": "nmap -p445 --script smb2-security-mode,smb2-capabilities 127.0.0.1",
+    "exit": 0,
+    "duration_ms": 157,
+    "output": "Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530\nNmap scan report for localhost (127.0.0.1)\nHost is up (0.000054s latency).\n\nPORT    STATE SERVICE\n445/tcp open  microsoft-ds\n\nHost script results:\n| smb2-capabilities: \n|   2.0.2: \n|     Distributed File System\n|   2.1: \n|     Distributed File System\n|     Leasing\n|     Multi-credit operations\n|   3.0: \n|     Distributed File System\n|     Leasing\n|     Multi-credit operations\n|   3.0.2: \n|     Distributed File System\n|     Leasing\n|     Multi-credit operations\n|   3.1.1: \n|     Distributed File System\n|     Leasing\n|_    Multi-credit operations\n| smb2-security-mode: \n|   3.1.1: \n|_    Message signing enabled but not required\n\nNmap done: 1 IP address (1 host up) scanned in 0.14 seconds"
+  },
+  {
+    "scenario": "S03",
+    "stepId": "smb-05",
+    "label": "null-session share listing",
+    "site_command": "smbclient -N -L //<TARGET_IP>/",
+    "executed_command": "smbclient -N -L //127.0.0.1/",
+    "exit": 0,
+    "duration_ms": 332,
+    "output": "Sharename       Type      Comment\n\t---------       ----      -------\n\tAPPS            Disk      Shared Directory\n\tprint$          Disk      Printer Drivers\n\tIPC$            IPC       IPC Service (Samba 4.24.5-Debian-4.24.5+dfsg-1)\n\tnobody          Disk      Home Directories\nReconnecting with SMB1 for workgroup listing.\nProtocol negotiation to server 127.0.0.1 (for a protocol between LANMAN1 and NT1) failed: NT_STATUS_INVALID_NETWORK_RESPONSE\nUnable to connect with SMB1 -- no workgroup available"
+  },
+  {
+    "scenario": "S03",
+    "stepId": "smb-06",
+    "label": "smbmap null/guest permission map",
+    "site_command": "smbmap -H <TARGET_IP> -u '' -p ''\nsmbmap -H <TARGET_IP> -u guest -p ''",
+    "executed_command": "smbmap -H 127.0.0.1 -u '' -p ''",
+    "exit": 0,
+    "duration_ms": 1586,
+    "output": "________  ___      ___  _______   ___      ___       __         _______\n   /\"       )|\"  \\    /\"  ||   _  \"\\ |\"  \\    /\"  |     /\"\"\\       |   __ \"\\\n  (:   \\___/  \\   \\  //   |(. |_)  :) \\   \\  //   |    /    \\      (. |__) :)\n   \\___  \\    /\\  \\/.    ||:     \\/   /\\   \\/.    |   /' /\\  \\     |:  ____/\n    __/  \\   |: \\.        |(|  _  \\  |: \\.        |  //  __'  \\    (|  /\n   /\" \\   :) |.  \\    /:  ||: |_)  :)|.  \\    /:  | /   /  \\   \\  /|__/ \\\n  (_______/  |___|\\__/|___|(_______/ |___|\\__/|___|(___/    \\___)(_______)\n-----------------------------------------------------------------------------\nSMBMap - Samba Share Enumerator v1.10.7 | Shawn Evans - ShawnDEvans@gmail.com\n                     https://github.com/ShawnDEvans/smbmap\n\n[\\] Checking for open ports...                                                                                                    \r\r\r[|] Checking for open ports...                                                                                                    \r\r\r[/] Checking for open ports...                                                                                                    \r\r\r[-] Checking for open ports...                                                                                                    \r\r\r[\\] Checking for open ports...                                                                                                    \r\r\r[*] Detected 1 hosts serving SMB\n[|] Initializing hosts...                                                                                                    \r\r\r[/] Initializing hosts...                                                                                                    \r\r\r[-] Initializing hosts...                                                                                                    \r\r\r[\\] Authenticating...                                                                                                    \r\r\r[|] Authenticating...                                                                                                    \r\r\r[/] Authenticating...                                                                                                    \r\r\r[-] Authenticating...                                                                                                    \r\r\r[*] Established 1 SMB connections(s) and 0 authenticated session(s)\n[\\] Enumerating shares...                                                                                       "
+  },
+  {
+    "scenario": "S03",
+    "stepId": "smb-07",
+    "label": "NetExec null/guest pass",
+    "site_command": "nxc smb <TARGET_IP> -u '' -p '' --shares",
+    "executed_command": "timeout 30 nxc smb 127.0.0.1 -u '' -p '' --shares",
+    "exit": 0,
+    "duration_ms": 3798,
+    "output": "SMB                      127.0.0.1       445    FILESERVER       [*] Unix - Samba (name:FILESERVER) (domain:FILESERVER) (signing:False) (SMBv1:None) (Null Auth:True)\nSMB                      127.0.0.1       445    FILESERVER       [+] FILESERVER\\: \nSMB                      127.0.0.1       445    FILESERVER       [*] Enumerated shares\nSMB                      127.0.0.1       445    FILESERVER       Share           Permissions     Remark\nSMB                      127.0.0.1       445    FILESERVER       -----           -----------     ------\nSMB                      127.0.0.1       445    FILESERVER       APPS            READ,WRITE      Shared Directory\nSMB                      127.0.0.1       445    FILESERVER       print$                          Printer Drivers\nSMB                      127.0.0.1       445    FILESERVER       IPC$                            IPC Service (Samba 4.24.5-Debian-4.24.5+dfsg-1)\nSMB                      127.0.0.1       445    FILESERVER       nobody                          Home Directories"
+  },
+  {
+    "scenario": "S03",
+    "stepId": "smb-10",
+    "label": "negative: nonexistent share",
+    "site_command": "smbclient -N //<TARGET_IP>/<SHARE_NAME>\nsmbclient -U '<DOMAIN>/<USERNAME>%<PASSWORD>' //<TARGET_IP>/<SHARE_NAME>",
+    "executed_command": "smbclient -N //127.0.0.1/NOPE -c 'ls'",
+    "exit": 1,
+    "duration_ms": 39,
+    "output": "tree connect failed: NT_STATUS_BAD_NETWORK_NAME"
+  },
+  {
+    "scenario": "S04",
+    "stepId": "dns-01",
+    "label": "confirm DNS on :53 (negative on this host)",
+    "site_command": "nmap -sCV -p53 <TARGET_IP>\nsudo nmap -sU -p53 --script dns-nsid <TARGET_IP>",
+    "executed_command": "nmap -sCV -p53 127.0.0.1",
+    "exit": 0,
+    "duration_ms": 284,
+    "output": "Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530\nNmap scan report for localhost (127.0.0.1)\nHost is up (0.000065s latency).\n\nPORT   STATE  SERVICE VERSION\n53/tcp closed domain\n\nService detection performed. Please report any incorrect results at https://nmap.org/submit/ .\nNmap done: 1 IP address (1 host up) scanned in 0.27 seconds"
+  },
+  {
+    "scenario": "S04",
+    "stepId": "dns-02",
+    "label": "A/AAAA via local dnsmasq on :5353 (site assumes :53)",
+    "site_command": "dig @<TARGET_IP> <DOMAIN> A +short\ndig @<TARGET_IP> <DOMAIN> AAAA +short",
+    "executed_command": "dig @127.0.0.1 -p 5353 corp.local A +short; dig @127.0.0.1 -p 5353 corp.local AAAA +short",
+    "exit": 0,
+    "duration_ms": 39,
+    "output": "10.10.10.10"
+  },
+  {
+    "scenario": "S04",
+    "stepId": "dns-03",
+    "label": "NS/MX/TXT/SOA via :5353",
+    "site_command": "dig @<TARGET_IP> <DOMAIN> NS +short\ndig @<TARGET_IP> <DOMAIN> MX +short\ndig @<TARGET_IP> <DOMAIN> TXT +short\ndig @<TARGET_IP> <DOMAIN> CNAME +short\ndig @<TARGET_IP> <DOMAIN> SOA +short",
+    "executed_command": "dig @127.0.0.1 -p 5353 corp.local NS +short; dig @127.0.0.1 -p 5353 corp.local MX +short; dig @127.0.0.1 -p 5353 corp.local TXT +short; dig @127.0.0.1 -p 5353 corp.local SOA +short",
+    "exit": 0,
+    "duration_ms": 54,
+    "output": ""
+  },
+  {
+    "scenario": "S04",
+    "stepId": "dns-05",
+    "label": "AXFR attempt",
+    "site_command": "dig axfr @<TARGET_IP> <DOMAIN>",
+    "executed_command": "dig axfr @127.0.0.1 -p 5353 corp.local",
+    "exit": 0,
+    "duration_ms": 18,
+    "output": "; <<>> DiG 9.20.26-1-Debian <<>> axfr @127.0.0.1 -p 5353 corp.local\n; (1 server found)\n;; global options: +cmd\n; Transfer failed."
+  },
+  {
+    "scenario": "S04",
+    "stepId": "dns-02",
+    "label": "negative: no resolver on :53",
+    "site_command": "dig @<TARGET_IP> <DOMAIN> A +short\ndig @<TARGET_IP> <DOMAIN> AAAA +short",
+    "executed_command": "dig @127.0.0.1 corp.local A +short",
+    "exit": 9,
+    "duration_ms": 15,
+    "output": ";; communications error to 127.0.0.1#53: connection refused\n;; communications error to 127.0.0.1#53: connection refused\n;; communications error to 127.0.0.1#53: connection refused\n\n; <<>> DiG 9.20.26-1-Debian <<>> @127.0.0.1 corp.local A +short\n; (1 server found)\n;; global options: +cmd\n;; no servers could be reached"
+  },
+  {
+    "scenario": "S05",
+    "stepId": "ftp-01",
+    "label": "confirm FTP on adapted port 2121",
+    "site_command": "nmap -sCV -p21 <TARGET_IP>",
+    "executed_command": "nmap -sCV -p2121 127.0.0.1",
+    "exit": 0,
+    "duration_ms": 427,
+    "output": "Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530\nNmap scan report for localhost (127.0.0.1)\nHost is up (0.000097s latency).\n\nPORT     STATE SERVICE VERSION\n2121/tcp open  ftp     pyftpdlib 2.2.0\n| ftp-syst: \n|   STAT: \n| FTP server status:\n|  Connected to: 127.0.0.1:2121\n|  Waiting for username.\n|  TYPE: ASCII; STRUcture: File; MODE: Stream\n|  Data connection closed.\n|_End of status.\n| ftp-anon: Anonymous FTP login allowed (FTP code 230)\n| -rw-rw-r--   1 ramki    ramki          10 Oct 29 12:37 readme.txt\n|_drwxrwxr-x   2 ramki    ramki          60 Oct 29 12:37 sub\n\nService detection performed. Please report any incorrect results at https://nmap.org/submit/ .\nNmap done: 1 IP address (1 host up) scanned in 0.41 seconds"
+  },
+  {
+    "scenario": "S05",
+    "stepId": "ftp-02",
+    "label": "FTP NSE checks",
+    "site_command": "nmap -p21 --script ftp-anon,ftp-syst,ftp-vsftpd-backdoor <TARGET_IP>",
+    "executed_command": "nmap -p2121 --script ftp-anon,ftp-syst,ftp-vsftpd-backdoor 127.0.0.1",
+    "exit": 0,
+    "duration_ms": 121,
+    "output": "Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530\nNmap scan report for localhost (127.0.0.1)\nHost is up (0.000072s latency).\n\nPORT     STATE SERVICE\n2121/tcp open  ccproxy-ftp\n\nNmap done: 1 IP address (1 host up) scanned in 0.10 seconds"
+  },
+  {
+    "scenario": "S05",
+    "stepId": "ftp-07",
+    "label": "mirror anonymous FTP",
+    "site_command": "mkdir -p <OUTPUT_DIR> && cd <OUTPUT_DIR>\nwget -m ftp://anonymous:anonymous@<TARGET_IP>/",
+    "executed_command": "rm -rf /tmp/oscp-lab/mirror && mkdir -p /tmp/oscp-lab/mirror && cd /tmp/oscp-lab/mirror && wget -m ftp://anonymous:anonymous@127.0.0.1:2121/ 2>&1 | tail -8 && find . -type f",
+    "exit": 0,
+    "duration_ms": 33,
+    "output": "0K                                                       100%  190K=0s\n\n2026-10-29 18:15:53 (190 KB/s) - ‘127.0.0.1:2121/sub/app.conf’ saved [26]\n\nFINISHED --2026-10-29 18:15:53--\nTotal wall clock time: 0.01s\nDownloaded: 4 files, 228 in 0.001s (224 KB/s)\n./127.0.0.1:2121/sub/app.conf\n./127.0.0.1:2121/sub/.listing\n./127.0.0.1:2121/readme.txt\n./127.0.0.1:2121/.listing"
+  },
+  {
+    "scenario": "S05",
+    "stepId": "ftp-09",
+    "label": "triage downloaded files",
+    "site_command": "find . -type f -exec file {} +\ngrep -RIn -E 'pass|pwd|secret|token|key|user' .",
+    "executed_command": "cd /tmp/oscp-lab/mirror && find . -type f -exec file {} + && grep -RIn -E 'pass|pwd|secret|token|key|user' .",
+    "exit": 0,
+    "duration_ms": 22,
+    "output": "./127.0.0.1:2121/sub/app.conf: ASCII text\n./127.0.0.1:2121/sub/.listing: ASCII text, with CRLF line terminators\n./127.0.0.1:2121/readme.txt:   ASCII text\n./127.0.0.1:2121/.listing:     ASCII text, with CRLF line terminators\n./127.0.0.1:2121/sub/app.conf:1:user=admin pass=Secret123"
+  },
+  {
+    "scenario": "S05",
+    "stepId": "ftp-04",
+    "label": "negative: bad FTP credentials",
+    "site_command": "ftp -p <TARGET_IP>",
+    "executed_command": "curl -s --max-time 5 ftp://bad:bad@127.0.0.1:2121/",
+    "exit": 67,
+    "duration_ms": 3015,
+    "output": ""
+  },
+  {
+    "scenario": "S06",
+    "stepId": "ssh-01",
+    "label": "confirm SSH version",
+    "site_command": "nmap -sV -p22 <TARGET_IP>",
+    "executed_command": "nmap -sV -p22 127.0.0.1",
+    "exit": 0,
+    "duration_ms": 244,
+    "output": "Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530\nNmap scan report for localhost (127.0.0.1)\nHost is up (0.000063s latency).\n\nPORT   STATE SERVICE VERSION\n22/tcp open  ssh     OpenSSH 10.3p1 Debian 5 (protocol 2.0)\nService Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel\n\nService detection performed. Please report any incorrect results at https://nmap.org/submit/ .\nNmap done: 1 IP address (1 host up) scanned in 0.22 seconds"
+  },
+  {
+    "scenario": "S06",
+    "stepId": "ssh-02",
+    "label": "ask for auth methods without a credential",
+    "site_command": "ssh -o PreferredAuthentications=none -o StrictHostKeyChecking=no <USERNAME>@<TARGET_IP>\n---\nnmap -p22 --script ssh-auth-methods <TARGET_IP>",
+    "executed_command": "ssh -o PreferredAuthentications=none -o StrictHostKeyChecking=no -o BatchMode=yes ramki@127.0.0.1",
+    "exit": 255,
+    "duration_ms": 125,
+    "output": "Pseudo-terminal will not be allocated because stdin is not a terminal.\r\nramki@127.0.0.1: Permission denied (publickey,password)."
+  },
+  {
+    "scenario": "S06",
+    "stepId": "ssh-02",
+    "label": "nmap auth-methods cross-check",
+    "site_command": "ssh -o PreferredAuthentications=none -o StrictHostKeyChecking=no <USERNAME>@<TARGET_IP>\n---\nnmap -p22 --script ssh-auth-methods <TARGET_IP>",
+    "executed_command": "nmap -p22 --script ssh-auth-methods 127.0.0.1",
+    "exit": 0,
+    "duration_ms": 140,
+    "output": "Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530\nNmap scan report for localhost (127.0.0.1)\nHost is up (0.000079s latency).\n\nPORT   STATE SERVICE\n22/tcp open  ssh\n| ssh-auth-methods: \n|   Supported authentication methods: \n|     publickey\n|_    password\n\nNmap done: 1 IP address (1 host up) scanned in 0.13 seconds"
+  },
+  {
+    "scenario": "S06",
+    "stepId": "ssh-10",
+    "label": "algorithm list",
+    "site_command": "nmap -p22 --script ssh2-enum-algos <TARGET_IP>",
+    "executed_command": "nmap -p22 --script ssh2-enum-algos 127.0.0.1",
+    "exit": 0,
+    "duration_ms": 129,
+    "output": "Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530\nNmap scan report for localhost (127.0.0.1)\nHost is up (0.000063s latency).\n\nPORT   STATE SERVICE\n22/tcp open  ssh\n| ssh2-enum-algos: \n|   kex_algorithms: (10)\n|       mlkem768x25519-sha256\n|       sntrup761x25519-sha512\n|       sntrup761x25519-sha512@openssh.com\n|       curve25519-sha256\n|       curve25519-sha256@libssh.org\n|       ecdh-sha2-nistp256\n|       ecdh-sha2-nistp384\n|       ecdh-sha2-nistp521\n|       ext-info-s\n|       kex-strict-s-v00@openssh.com\n|   server_host_key_algorithms: (4)\n|       rsa-sha2-512\n|       rsa-sha2-256\n|       ecdsa-sha2-nistp256\n|       ssh-ed25519\n|   encryption_algorithms: (6)\n|       chacha20-poly1305@openssh.com\n|       aes128-gcm@openssh.com\n|       aes256-gcm@openssh.com\n|       aes128-ctr\n|       aes192-ctr\n|       aes256-ctr\n|   mac_algorithms: (10)\n|       umac-64-etm@openssh.com\n|       umac-128-etm@openssh.com\n|       hmac-sha2-256-etm@openssh.com\n|       hmac-sha2-512-etm@openssh.com\n|       hmac-sha1-etm@openssh.com\n|       umac-64@openssh.com\n|       umac-128@openssh.com\n|       hmac-sha2-256\n|       hmac-sha2-512\n|       hmac-sha1\n|   compression_algorithms: (2)\n|       none\n|_      zlib@openssh.com\n\nNmap done: 1 IP address (1 host up) scanned in 0.12 seconds"
+  },
+  {
+    "scenario": "S06",
+    "stepId": "ssh-03",
+    "label": "verbose trace (no credential supplied)",
+    "site_command": "ssh -v <USERNAME>@<TARGET_IP>",
+    "executed_command": "ssh -v -o BatchMode=yes -o StrictHostKeyChecking=no ramki@127.0.0.1 2>&1 | tail -12",
+    "exit": 0,
+    "duration_ms": 157,
+    "output": "debug1: Will attempt key: /home/ramki/.ssh/id_ecdsa_sk \r\ndebug1: Will attempt key: /home/ramki/.ssh/id_ed25519_sk \r\ndebug1: Offering public key: /home/ramki/.ssh/id_ed25519 ED25519 SHA256:1HkfaGmsMGXt3859hOCgTjzAisxD+KDLfUOyhe5IXFs agent\r\ndebug1: Authentications that can continue: publickey,password\r\ndebug1: Offering public key: ramki479@github.com ED25519 SHA256:LFZJOPJTONadrA7pj+M7D/UqCCUiqoRmUNmzAeYrqdA agent\r\ndebug1: Authentications that can continue: publickey,password\r\ndebug1: Trying private key: /home/ramki/.ssh/id_rsa\r\ndebug1: Trying private key: /home/ramki/.ssh/id_ecdsa\r\ndebug1: Trying private key: /home/ramki/.ssh/id_ecdsa_sk\r\ndebug1: Trying private key: /home/ramki/.ssh/id_ed25519_sk\r\ndebug1: No more authentication methods to try.\r\nramki@127.0.0.1: Permission denied (publickey,password)."
+  },
+  {
+    "scenario": "S06",
+    "stepId": "ssh-04",
+    "label": "environment check: sshpass prerequisite",
+    "site_command": "sshpass -p '<PASSWORD>' ssh -o StrictHostKeyChecking=no <USERNAME>@<TARGET_IP>",
+    "executed_command": "command -v sshpass || echo \"sshpass NOT INSTALLED\"",
+    "exit": 0,
+    "duration_ms": 5,
+    "output": "sshpass NOT INSTALLED"
+  },
+  {
+    "scenario": "S07",
+    "stepId": "linux-privesc-01",
+    "label": "identity and sudo rights",
+    "site_command": "id; whoami; sudo -l; sudo -V",
+    "executed_command": "timeout 8 bash -c 'id; whoami; sudo -l; sudo -V' 2>&1 | head -20",
+    "exit": 0,
+    "duration_ms": 64,
+    "output": "uid=1000(ramki) gid=1000(ramki) groups=1000(ramki),4(adm),20(dialout),24(cdrom),25(floppy),27(sudo),29(audio),30(dip),44(video),46(plugdev),100(users),101(netdev),102(scanner),112(bluetooth),115(lpadmin),119(wireshark),124(kaboxer),126(docker)\nramki\nsudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper\nsudo: a password is required\nSudo version 1.9.17p2\nSudoers policy plugin version 1.9.17p2\nSudoers file grammar version 50\nSudoers I/O plugin version 1.9.17p2\nSudoers audit plugin version 1.9.17p2"
+  },
+  {
+    "scenario": "S07",
+    "stepId": "linux-privesc-04",
+    "label": "SUID enumeration",
+    "site_command": "find / -perm -4000 -type f 2>/dev/null\nfind / -perm -2000 -type f 2>/dev/null",
+    "executed_command": "timeout 40 find / -perm -4000 -type f 2>/dev/null | head -30",
+    "exit": 0,
+    "duration_ms": 17953,
+    "output": "/usr/bin/kismet_cap_ubertooth_one\n/usr/bin/vmware-user-suid-wrapper\n/usr/bin/kismet_cap_rz_killerbee\n/usr/bin/pkexec\n/usr/bin/su\n/usr/bin/fusermount3\n/usr/bin/ntfs-3g\n/usr/bin/passwd\n/usr/bin/kismet_cap_nrf_52840\n/usr/bin/chsh\n/usr/bin/kismet_cap_linux_bluetooth\n/usr/bin/sudo\n/usr/bin/chfn\n/usr/bin/kismet_cap_nrf_mousejack\n/usr/bin/umount\n/usr/bin/kismet_cap_nxp_kw41z\n/usr/bin/kismet_cap_nrf_51822\n/usr/bin/newgrp\n/usr/bin/kismet_cap_ti_cc_2531\n/usr/bin/kismet_cap_hak5_wifi_coconut\n/usr/bin/mount\n/usr/bin/kismet_cap_ti_cc_2540\n/usr/bin/gpasswd\n/usr/bin/kismet_cap_linux_wifi\n/usr/lib/chromium/chrome-sandbox\n/usr/lib/dbus-1.0/dbus-daemon-launch-helper\n/usr/lib/xorg/Xorg.wrap\n/usr/lib/openssh/ssh-keysign\n/usr/sbin/pppd\n/usr/sbin/mount.nfs"
+  },
+  {
+    "scenario": "S07",
+    "stepId": "linux-privesc-07",
+    "label": "capabilities",
+    "site_command": "getcap -r / 2>/dev/null",
+    "executed_command": "command -v getcap >/dev/null && timeout 30 getcap -r / 2>/dev/null | head -20 || echo \"getcap NOT INSTALLED\"",
+    "exit": 0,
+    "duration_ms": 13170,
+    "output": "/usr/bin/kwin_wayland cap_sys_nice=ep\n/usr/bin/fping cap_net_raw=ep\n/usr/bin/dumpcap cap_net_admin,cap_net_raw=eip\n/usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper cap_net_bind_service,cap_net_admin,cap_sys_nice=ep\n/usr/lib/x86_64-linux-gnu/libexec/org_kde_powerdevil cap_wake_alarm=ep\n/usr/lib/x86_64-linux-gnu/libexec/ksysguard/ksgrd_network_helper cap_net_raw=ep\n/usr/lib/nmap/nmap cap_net_bind_service,cap_net_admin,cap_net_raw=eip"
+  },
+  {
+    "scenario": "S07",
+    "stepId": "linux-privesc-09",
+    "label": "scheduled work",
+    "site_command": "cat /etc/crontab\nls -la /etc/cron.d /etc/cron.daily /etc/cron.hourly 2>/dev/null\ncrontab -l 2>/dev/null\nsystemctl list-timers --all 2>/dev/null",
+    "executed_command": "cat /etc/crontab; ls -la /etc/cron.d /etc/cron.daily 2>/dev/null; crontab -l 2>/dev/null; systemctl list-timers --all 2>/dev/null | head -6",
+    "exit": 0,
+    "duration_ms": 40,
+    "output": "# /etc/crontab: system-wide crontab\n# Unlike any other crontab you don't have to run the `crontab'\n# command to install the new version when you edit this file\n# and files in /etc/cron.d. These files also have username fields,\n# that none of the other crontabs do.\n\nSHELL=/bin/sh\nPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n\n# Example of job definition:\n# .---------------- minute (0 - 59)\n# |  .------------- hour (0 - 23)\n# |  |  .---------- day of month (1 - 31)\n# |  |  |  .------- month (1 - 12) OR jan,feb,mar,apr ...\n# |  |  |  |  .---- day of week (0 - 6) (Sunday=0 or 7) OR sun,mon,tue,wed,thu,fri,sat\n# |  |  |  |  |\n# *  *  *  *  * user-name command to be executed\n17 *\t* * *\troot\tcd / && run-parts --report /etc/cron.hourly\n25 6\t* * *\troot\ttest -x /usr/sbin/anacron || { cd / && run-parts --report /etc/cron.daily; }\n47 6\t* * 7\troot\ttest -x /usr/sbin/anacron || { cd / && run-parts --report /etc/cron.weekly; }\n52 6\t1 * *\troot\ttest -x /usr/sbin/anacron || { cd / && run-parts --report /etc/cron.monthly; }\n#\n/etc/cron.d:\ntotal 36\ndrwxr-xr-x   2 root root  4096 Jul 12 15:24 .\ndrwxr-xr-x 213 root root 12288 Oct 29 14:31 ..\n-rw-r--r--   1 root root   188 Jan  2  2026 e2scrub_all\n-rw-r--r--   1 root root   607 Jun  3  2025 john\n-rw-r--r--   1 root root   712 Dec 20  2025 php\n-rw-r--r--   1 root root   102 Jan  7  2026 .placeholder\n-rw-r--r--   1 root root   400 Jan 16  2024 sysstat\n\n/etc/cron.daily:\ntotal 60\ndrwxr-xr-x   2 root root  4096 Jul 12 15:27 .\ndrwxr-xr-x 213 root root 12288 Oct 29 14:31 ..\n-rwxr-xr-x   1 root root   539 Jan 28  2026 apache2\n-rwxr-xr-x   1 root root  1478 Mar  5  2026 apt-compat\n-rwxr-xr-x   1 root root   123 Jan 29  2026 dpkg\n-rwxr-xr-x   1 root root  4757 Dec  8  2025 exim4-base\n-rwxr-xr-x   1 root root   929 Dec 21  2025 ftpmirror\n-rwxr-xr-x   1 root root   377 Jul 14  2024 logrotate\n-rwxr-xr-x   1 root root  1395 May  2  2025 man-db\n-rw-r--r--   1 root root   102 Jan  7  2026 .placeholder\n-rwxr-xr-x   1 root root   652 Dec  7  2020 plocate\n-rwxr-xr-x   1 root root   526 Jan 16  2024 sysstat\n# Edit this file to introduce tasks to be run by cron.\n# \n# Each task to run has to be defined through a single line\n# indicating with different fields when the task will be run\n# and what command to run for the task\n# \n# To define the time you can provide concrete values for\n# minute (m), hour (h), day of month (dom), month (mon),\n# and day of week (dow) or use '*' in these fields (for 'any').\n# \n# Notice that tasks will be s"
+  },
+  {
+    "scenario": "S07",
+    "stepId": "linux-privesc-11",
+    "label": "identity files permissions",
+    "site_command": "ls -la /etc/passwd /etc/shadow /etc/sudoers /etc/sudoers.d/ 2>/dev/null",
+    "executed_command": "ls -la /etc/passwd /etc/shadow /etc/sudoers /etc/sudoers.d/ 2>/dev/null",
+    "exit": 0,
+    "duration_ms": 21,
+    "output": "-rw-r--r-- 1 root root   3995 Oct 23 23:13 /etc/passwd\n-rw-r----- 1 root shadow 1824 Oct 23 23:13 /etc/shadow\n-r--r----- 1 root root   6617 Jun  8 13:02 /etc/sudoers\n\n/etc/sudoers.d/:\ntotal 24\ndrwxr-xr-x   2 root root  4096 Apr  7  2026 .\ndrwxr-xr-x 213 root root 12288 Oct 29 14:31 ..\n-r--r-----   1 root root   134 Nov  8  2024 kali-grant-root\n-r--r-----   1 root root    39 Jan  8  2026 ospd-openvas"
+  },
+  {
+    "scenario": "S08",
+    "stepId": "active-directory-01",
+    "label": "no DC in lab: SMB banner from local non-DC Samba",
+    "site_command": "nmap -sCV -p53,88,135,139,389,445,464,593,636,3268,3269,5985 <DOMAIN_CONTROLLER_IP>\nnxc smb <DOMAIN_CONTROLLER_IP>\ndig @<DOMAIN_CONTROLLER_IP> _ldap._tcp.<DOMAIN> SRV +short",
+    "executed_command": "nxc smb 127.0.0.1 2>&1 | head -8",
+    "exit": 0,
+    "duration_ms": 4799,
+    "output": "SMB                      127.0.0.1       445    FILESERVER       [*] Unix - Samba (name:FILESERVER) (domain:FILESERVER) (signing:False) (SMBv1:None) (Null Auth:True)"
+  },
+  {
+    "scenario": "S08",
+    "stepId": "active-directory-01",
+    "label": "no DC in lab: LDAP SRV lookup",
+    "site_command": "nmap -sCV -p53,88,135,139,389,445,464,593,636,3268,3269,5985 <DOMAIN_CONTROLLER_IP>\nnxc smb <DOMAIN_CONTROLLER_IP>\ndig @<DOMAIN_CONTROLLER_IP> _ldap._tcp.<DOMAIN> SRV +short",
+    "executed_command": "dig @127.0.0.1 -p 5353 _ldap._tcp.corp.local SRV +short",
+    "exit": 0,
+    "duration_ms": 24,
+    "output": ""
+  },
+  {
+    "scenario": "S09",
+    "stepId": "http-06",
+    "label": "current shipped command (expected to fail)",
+    "site_command": "openssl s_client -connect <TARGET_IP>:443 -servername <DOMAIN> /dev/null | openssl x509 -noout -subject -issuer -dates -ext subjectAltName",
+    "executed_command": "openssl s_client -connect 127.0.0.1:8443 -servername corp.local /dev/null | openssl x509 -noout -subject",
+    "exit": 1,
+    "duration_ms": 19,
+    "output": "s_client: cannot provide both -connect option and target parameter\ns_client: Use -help for summary.\nCould not find certificate from <stdin>"
+  },
+  {
+    "scenario": "S09",
+    "stepId": "http-06",
+    "label": "corrected form with stdin redirect",
+    "site_command": "openssl s_client -connect <TARGET_IP>:443 -servername <DOMAIN> /dev/null | openssl x509 -noout -subject -issuer -dates -ext subjectAltName",
+    "executed_command": "openssl s_client -connect 127.0.0.1:8443 -servername corp.local </dev/null 2>/dev/null | openssl x509 -noout -subject",
+    "exit": 0,
+    "duration_ms": 47,
+    "output": "subject=CN=corp.local"
+  },
+  {
+    "scenario": "S09",
+    "stepId": "linux-privesc-08",
+    "label": "shipped capability command (interpreter lost by parser)",
+    "site_command": "# cap_setuid on python\npython3 -c 'import os; os.setuid(0); os.system(\"/bin/sh\")'\n# cap_dac_read_search\n\n -c 'print(open(\"/etc/shadow\").read())'",
+    "executed_command": "  -c 'print(open(\"/etc/shadow\").read())'",
+    "exit": 127,
+    "duration_ms": 3,
+    "output": "/bin/bash: line 1: -c: command not found"
+  },
+  {
+    "scenario": "S10",
+    "stepId": "directory-vhost-01",
+    "label": "prerequisite check: wordlist paths",
+    "site_command": "ls /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt\nls /usr/share/seclists/Discovery/Web-Content/raft-small-words.txt\nls /usr/share/wordlists/dirb/common.txt",
+    "executed_command": "ls /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt /usr/share/wordlists/dirb/common.txt 2>&1",
+    "exit": 0,
+    "duration_ms": 9,
+    "output": "/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt\n/usr/share/wordlists/dirb/common.txt"
+  },
+  {
+    "scenario": "S10",
+    "stepId": "directory-vhost-03",
+    "label": "negative: missing wordlist path",
+    "site_command": "ffuf -u http://<TARGET_IP>/FUZZ -w <WORDLIST> -mc 200,204,301,302,307,401,403 -ac",
+    "executed_command": "ffuf -u http://127.0.0.1:8124/FUZZ -w /tmp/oscp-lab/does-not-exist.txt -mc 200 -ac -s",
+    "exit": 1,
+    "duration_ms": 20,
+    "output": "Fuzz Faster U Fool - v2.1.0-dev\n\nHTTP OPTIONS:\n  -H                  Header `\"Name: Value\"`, separated by colon. Multiple -H flags are accepted.\n  -X                  HTTP method to use\n  -b                  Cookie data `\"NAME1=VALUE1; NAME2=VALUE2\"` for copy as curl functionality.\n  -cc                 Client cert for authentication. Client key needs to be defined as well for this to work\n  -ck                 Client key for authentication. Client certificate needs to be defined as well for this to work\n  -d                  POST data\n  -http2              Use HTTP2 protocol (default: false)\n  -ignore-body        Do not fetch the response content. (default: false)\n  -r                  Follow redirects (default: false)\n  -raw                Do not encode URI (default: false)\n  -recursion          Scan recursively. Only FUZZ keyword is supported, and URL (-u) has to end in it. (default: false)\n  -recursion-depth    Maximum recursion depth. (default: 0)\n  -recursion-strategy Recursion strategy: \"default\" for a redirect based, and \"greedy\" to recurse on all matches (default: default)\n  -replay-proxy       Replay matched requests using this proxy.\n  -sni                Target TLS SNI, does not support FUZZ keyword\n  -timeout            HTTP request timeout in seconds. (default: 10)\n  -u                  Target URL\n  -x                  Proxy URL (SOCKS5 or HTTP). For example: http://127.0.0.1:8080 or socks5://127.0.0.1:8080\n\nGENERAL OPTIONS:\n  -V                  Show version information. (default: false)\n  -ac                 Automatically calibrate filtering options (default: false)\n  -acc                Custom auto-calibration string. Can be used multiple times. Implies -ac\n  -ach                Per host autocalibration (default: false)\n  -ack                Autocalibration keyword (default: FUZZ)\n  -acs                Custom auto-calibration strategies. Can be used multiple times. Implies -ac\n  -c                  Colorize output. (default: false)\n  -config             Load configuration from a file\n  -json               JSON output, printing newline-delimited JSON records (default: false)\n  -maxtime            Maximum running time in seconds for entire process. (default: 0)\n  -maxtime-job        Maximum running time in seconds per job. (default: 0)\n  -noninteractive     Disable the interactive console functionality (default: false)\n  -p                  Seconds of `delay` between requests, or a range of random delay. For example \"0.1\" or \"0.1-2.0\"\n  -rat"
+  },
+  {
+    "scenario": "S10",
+    "stepId": "directory-vhost-03",
+    "label": "negative: closed web port",
+    "site_command": "ffuf -u http://<TARGET_IP>/FUZZ -w <WORDLIST> -mc 200,204,301,302,307,401,403 -ac",
+    "executed_command": "ffuf -u http://127.0.0.1:9999/FUZZ -w /tmp/oscp-lab/words.txt -mc 200 -ac -s",
+    "exit": 0,
+    "duration_ms": 135,
+    "output": ""
+  },
+  {
+    "scenario": "S10",
+    "stepId": "http-12",
+    "label": "negative: crawler tool absent",
+    "site_command": "hakrawler -url http://<TARGET_IP> -depth 3 -plain\nkatana -u http://<TARGET_IP> -d 3 -silent",
+    "executed_command": "command -v hakrawler || echo \"hakrawler NOT INSTALLED\"; command -v katana || echo \"katana NOT INSTALLED\"",
+    "exit": 0,
+    "duration_ms": 14,
+    "output": "hakrawler NOT INSTALLED\nkatana NOT INSTALLED"
+  },
+  {
+    "scenario": "S11",
+    "stepId": "windows-privesc-15",
+    "label": "shipped Get-Acl command text (backslashes lost)",
+    "site_command": "Get-Acl HKLM:SOFTWARE<VENDOR> | Format-List\nGet-Acl HKLM:SYSTEMCurrentControlSetServices<SERVICE> | Format-List",
+    "executed_command": "bash -n -c 'Get-Acl HKLM:SOFTWARE<VENDOR> | Format-List' 2>&1 || true",
+    "exit": 0,
+    "duration_ms": 13,
+    "output": "bash: -c: line 1: syntax error near unexpected token `|'\nbash: -c: line 1: `Get-Acl HKLM:SOFTWARE<VENDOR> | Format-List'"
+  },
+  {
+    "scenario": "S11",
+    "stepId": "windows-privesc-05",
+    "label": "service path lookup text on a Windows host (not executable here)",
+    "site_command": "sc qc <SERVICE_NAME>\nicacls \"C:\\Program Files\\Vulnerable App\"",
+    "executed_command": "echo simulated",
+    "exit": 0,
+    "duration_ms": 6,
+    "output": "simulated"
+  }
+]

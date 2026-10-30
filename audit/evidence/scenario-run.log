@@ -1,0 +1,563 @@
+
+### S01 nmap-01 :: connectivity check (localhost instead of fictional 10.10.10.10) :: exit=0 (2054ms)
+$ ip a | head -5; ip route get 127.0.0.1; ping -c 3 127.0.0.1
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host noprefixroute 
+local 127.0.0.1 dev lo table local src 127.0.0.1 uid 1000 
+    cache <local> 
+PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
+64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.033 ms
+64 bytes from 127.0.0.1: icmp_seq=2 ttl=64 time=0.088 ms
+64 bytes from 127.0.0.1: icmp_seq=3 ttl=64 time=0.088 ms
+
+--- 127.0.0.1 ping statis
+
+### S01 nmap-02 :: create evidence dir :: exit=0 (10ms)
+$ mkdir -p /tmp/oscp-lab/out && cd /tmp/oscp-lab/out && pwd
+/tmp/oscp-lab/out
+
+### S01 nmap-03 :: ping sweep on loopback /24 :: exit=0 (36062ms)
+$ nmap -sn 127.0.0.1/24 -oN /tmp/oscp-lab/out/sweep.txt
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:12 +0530
+Nmap scan report for 127.0.0.0
+Host is up.
+Nmap scan report for localhost (127.0.0.1)
+Host is up.
+Nmap scan report for 127.0.0.2
+Host is up.
+Nmap scan report for 127.0.0.3
+Host is up.
+Nmap scan report for 127.0.0.4
+Host is up.
+Nmap scan report for 127.0.0.5
+Host is up.
+Nmap scan report for 127.0.0.6
+Host is up.
+Nmap scan report for 127.0.0.7
+Host is up.
+Nmap scan report for 127.0.0.8
+Host is up.
+Nmap scan report for 127.0.0.9
+Host is up.
+Nmap scan report for 127.0.0.10
+Host is up.
+Nmap scan report for 127.0.0.11
+Host is up.
+Nmap
+
+### S01 nmap-06 :: targeted version/script scan against local services :: exit=timeout/err (123950ms)
+$ nmap -sCV -p22,139,445,2121,8443 -oA /tmp/oscp-lab/out/local 127.0.0.1
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:12 +0530
+
+[signal SIGTERM]
+
+### S01 nmap-04 :: negative: closed port (site command uses sudo -sS, unavailable) :: exit=0 (40ms)
+$ nmap -sT -T4 -p1 127.0.0.1
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:14 +0530
+Nmap scan report for localhost (127.0.0.1)
+Host is up (0.0000070s latency).
+
+PORT  STATE  SERVICE
+1/tcp closed tcpmux
+
+Nmap done: 1 IP address (1 host up) scanned in 0.02 seconds
+
+### S01 nmap-06 :: missing variable: literal unresolved token in a shell :: exit=2 (4ms)
+$ nmap -sCV -p139,445 <TARGET_IP>
+/bin/bash: -c: line 1: syntax error near unexpected token `newline'
+/bin/bash: -c: line 1: `nmap -sCV -p139,445 <TARGET_IP>'
+
+### S02 http-03 :: fetch headers/body from local site server (site assumes :80) :: exit=0 (59ms)
+$ curl -i -sS http://127.0.0.1:8124/ | head -20
+HTTP/1.0 200 OK
+Server: SimpleHTTP/0.6 Python/3.14.6
+Date: Thu, 29 Oct 2026 12:44:44 GMT
+Content-type: text/html
+Content-Length: 2766
+Last-Modified: Thu, 22 Oct 2026 13:23:01 GMT
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0b0f14">
+  <meta name="description" content="Offline-ready OSCP command cheat sheet: pick a service, enter your target once, copy ready-to-run commands.">
+  <title>OSCP Cheat Sheet</title>
+  <link
+
+### S02 http-03 :: TLS header request against local self-signed TLS :: exit=timeout/err (45893ms)
+$ curl -I -sS https://127.0.0.1:8443/ -k
+[signal SIGTERM]
+
+### S02 http-04 :: compare codes/sizes across paths :: exit=0 (73ms)
+$ for p in / /index.html /assets/app.js /nope; do printf '%-16s ' "$p"; curl -s -o /dev/null -w '%{http_code} %{size_download} %{redirect_url}\n' "http://127.0.0.1:8124$p"; done
+/                200 2766 
+/index.html      200 2766 
+/assets/app.js   200 41144 
+/nope            404 460
+
+### S02 http-05 :: read robots/sitemap/asset hints :: exit=0 (17ms)
+$ curl -sS http://127.0.0.1:8124/robots.txt | head -5; curl -sS http://127.0.0.1:8124/ | grep -Eo '(src|href)="[^"]+"' | sort -u | head -10
+<!DOCTYPE HTML>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <style type="text/css">
+href="assets/app.css"
+href="icons/icon.svg"
+href="#main"
+href="manifest.webmanifest"
+src="assets/app.js"
+
+### S02 http-02 :: whatweb fingerprint (site assumes :80) :: exit=0 (4300ms)
+$ whatweb -a 1 http://127.0.0.1:8124/
+[1m[34mhttp://127.0.0.1:8124/[0m [200 OK] [1mCountry[0m[[0m[22mRESERVED[0m][[1m[31mZZ[0m], [1mHTML5[0m, [1mHTTPServer[0m[[1m[36mSimpleHTTP/0.6 Python/3.14.6[0m], [1mIP[0m[[0m[22m127.0.0.1[0m], [1mPython[0m[[1m[32m3.14.6[0m], [1mScript[0m[[0m[22mmodule[0m], [1mTitle[0m[[1m[33mOSCP Cheat Sheet[0m]
+
+### S02 directory-vhost-03 :: ffuf content discovery with a small wordlist :: exit=0 (139ms)
+$ ffuf -u http://127.0.0.1:8124/FUZZ -w /tmp/oscp-lab/words.txt -mc 200,204,301,302,307,401,403 -ac -s
+.htaccessifvGomVu
+index.html
+data
+assets/app.js
+
+### S02 directory-vhost-04 :: gobuster dir :: exit=0 (243ms)
+$ gobuster dir -u http://127.0.0.1:8124 -w /tmp/oscp-lab/words.txt -t 10
+===============================================================
+Gobuster v3.8.2
+by OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)
+===============================================================
+[+] Url:                     http://127.0.0.1:8124
+[+] Method:                  GET
+[+] Threads:                 10
+[+] Wordlist:                /tmp/oscp-lab/words.txt
+[+] Negative Status codes:   404
+[+] User Agent:              gobuster/3.8.2
+[+] Timeout:                 10s
+===============================================================
+Starting gobuster in directory enumeration mode
+===
+
+### S02 http-03 :: negative: service on a closed port :: exit=7 (22ms)
+$ curl -i -sS --max-time 4 http://127.0.0.1:9999/
+curl: (7) Failed to connect to 127.0.0.1 port 9999 after 0 ms: Could not connect to server
+
+### S03 smb-01 :: confirm SMB version :: exit=0 (11361ms)
+$ nmap -sCV -p139,445 127.0.0.1
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530
+Nmap scan report for localhost (127.0.0.1)
+Host is up (0.000068s latency).
+
+PORT    STATE SERVICE     VERSION
+139/tcp open  netbios-ssn Samba smbd 4
+445/tcp open  netbios-ssn Samba smbd 4
+
+Host script results:
+|_nbstat: NetBIOS name: FILESERVER, NetBIOS user: <unknown>, NetBIOS MAC: <unknown> (unknown)
+| smb2-time: 
+|   date: 2026-10-29T12:45:46
+|_  start_date: N/A
+| smb2-security-mode: 
+|   3.1.1: 
+|_    Message signing enabled but not required
+
+Service detection performed. Please report any incorrect results at https://nmap.or
+
+### S03 smb-02 :: NSE SMB baseline :: exit=0 (158ms)
+$ nmap -p139,445 --script smb-os-discovery,smb-security-mode,smb2-security-mode,smb-enum-shares,smb-enum-users 127.0.0.1
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530
+Nmap scan report for localhost (127.0.0.1)
+Host is up (0.000075s latency).
+
+PORT    STATE SERVICE
+139/tcp open  netbios-ssn
+445/tcp open  microsoft-ds
+
+Host script results:
+| smb2-security-mode: 
+|   3.1.1: 
+|_    Message signing enabled but not required
+
+Nmap done: 1 IP address (1 host up) scanned in 0.15 seconds
+
+### S03 smb-03 :: dialect and signing :: exit=0 (157ms)
+$ nmap -p445 --script smb2-security-mode,smb2-capabilities 127.0.0.1
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530
+Nmap scan report for localhost (127.0.0.1)
+Host is up (0.000054s latency).
+
+PORT    STATE SERVICE
+445/tcp open  microsoft-ds
+
+Host script results:
+| smb2-capabilities: 
+|   2.0.2: 
+|     Distributed File System
+|   2.1: 
+|     Distributed File System
+|     Leasing
+|     Multi-credit operations
+|   3.0: 
+|     Distributed File System
+|     Leasing
+|     Multi-credit operations
+|   3.0.2: 
+|     Distributed File System
+|     Leasing
+|     Multi-credit operations
+|   3.1.1: 
+|     Distributed File System
+|     Leasing
+|_    Multi-c
+
+### S03 smb-05 :: null-session share listing :: exit=0 (332ms)
+$ smbclient -N -L //127.0.0.1/
+Sharename       Type      Comment
+	---------       ----      -------
+	APPS            Disk      Shared Directory
+	print$          Disk      Printer Drivers
+	IPC$            IPC       IPC Service (Samba 4.24.5-Debian-4.24.5+dfsg-1)
+	nobody          Disk      Home Directories
+Reconnecting with SMB1 for workgroup listing.
+Protocol negotiation to server 127.0.0.1 (for a protocol between LANMAN1 and NT1) failed: NT_STATUS_INVALID_NETWORK_RESPONSE
+Unable to connect with SMB1 -- no workgroup available
+
+### S03 smb-06 :: smbmap null/guest permission map :: exit=0 (1586ms)
+$ smbmap -H 127.0.0.1 -u '' -p ''
+________  ___      ___  _______   ___      ___       __         _______
+   /"       )|"  \    /"  ||   _  "\ |"  \    /"  |     /""\       |   __ "\
+  (:   \___/  \   \  //   |(. |_)  :) \   \  //   |    /    \      (. |__) :)
+   \___  \    /\  \/.    ||:     \/   /\   \/.    |   /' /\  \     |:  ____/
+    __/  \   |: \.        |(|  _  \  |: \.        |  //  __'  \    (|  /
+   /" \   :) |.  \    /:  ||: |_)  :)|.  \    /:  | /   /  \   \  /|__/ \
+  (_______/  |___|\__/|___|(_______/ |___|\__/|___|(___/    \___)(_______)
+--------------------------------------------------------------------------
+
+### S03 smb-07 :: NetExec null/guest pass :: exit=0 (3798ms)
+$ timeout 30 nxc smb 127.0.0.1 -u '' -p '' --shares
+SMB                      127.0.0.1       445    FILESERVER       [*] Unix - Samba (name:FILESERVER) (domain:FILESERVER) (signing:False) (SMBv1:None) (Null Auth:True)
+SMB                      127.0.0.1       445    FILESERVER       [+] FILESERVER\: 
+SMB                      127.0.0.1       445    FILESERVER       [*] Enumerated shares
+SMB                      127.0.0.1       445    FILESERVER       Share           Permissions     Remark
+SMB                      127.0.0.1       445    FILESERVER       -----           -----------     ------
+SMB                      127.0.0.1       445    FILESERV
+
+### S03 smb-10 :: negative: nonexistent share :: exit=1 (39ms)
+$ smbclient -N //127.0.0.1/NOPE -c 'ls'
+tree connect failed: NT_STATUS_BAD_NETWORK_NAME
+
+### S04 dns-01 :: confirm DNS on :53 (negative on this host) :: exit=0 (284ms)
+$ nmap -sCV -p53 127.0.0.1
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530
+Nmap scan report for localhost (127.0.0.1)
+Host is up (0.000065s latency).
+
+PORT   STATE  SERVICE VERSION
+53/tcp closed domain
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 0.27 seconds
+
+### S04 dns-02 :: A/AAAA via local dnsmasq on :5353 (site assumes :53) :: exit=0 (39ms)
+$ dig @127.0.0.1 -p 5353 corp.local A +short; dig @127.0.0.1 -p 5353 corp.local AAAA +short
+10.10.10.10
+
+### S04 dns-03 :: NS/MX/TXT/SOA via :5353 :: exit=0 (54ms)
+$ dig @127.0.0.1 -p 5353 corp.local NS +short; dig @127.0.0.1 -p 5353 corp.local MX +short; dig @127.0.0.1 -p 5353 corp.local TXT +short; dig @127.0.0.1 -p 5353 corp.local SOA +short
+
+
+### S04 dns-05 :: AXFR attempt :: exit=0 (18ms)
+$ dig axfr @127.0.0.1 -p 5353 corp.local
+; <<>> DiG 9.20.26-1-Debian <<>> axfr @127.0.0.1 -p 5353 corp.local
+; (1 server found)
+;; global options: +cmd
+; Transfer failed.
+
+### S04 dns-02 :: negative: no resolver on :53 :: exit=9 (15ms)
+$ dig @127.0.0.1 corp.local A +short
+;; communications error to 127.0.0.1#53: connection refused
+;; communications error to 127.0.0.1#53: connection refused
+;; communications error to 127.0.0.1#53: connection refused
+
+; <<>> DiG 9.20.26-1-Debian <<>> @127.0.0.1 corp.local A +short
+; (1 server found)
+;; global options: +cmd
+;; no servers could be reached
+
+### S05 ftp-01 :: confirm FTP on adapted port 2121 :: exit=0 (427ms)
+$ nmap -sCV -p2121 127.0.0.1
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530
+Nmap scan report for localhost (127.0.0.1)
+Host is up (0.000097s latency).
+
+PORT     STATE SERVICE VERSION
+2121/tcp open  ftp     pyftpdlib 2.2.0
+| ftp-syst: 
+|   STAT: 
+| FTP server status:
+|  Connected to: 127.0.0.1:2121
+|  Waiting for username.
+|  TYPE: ASCII; STRUcture: File; MODE: Stream
+|  Data connection closed.
+|_End of status.
+| ftp-anon: Anonymous FTP login allowed (FTP code 230)
+| -rw-rw-r--   1 ramki    ramki          10 Oct 29 12:37 readme.txt
+|_drwxrwxr-x   2 ramki    ramki          60 Oct 29 12:37 sub
+
+Service det
+
+### S05 ftp-02 :: FTP NSE checks :: exit=0 (121ms)
+$ nmap -p2121 --script ftp-anon,ftp-syst,ftp-vsftpd-backdoor 127.0.0.1
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530
+Nmap scan report for localhost (127.0.0.1)
+Host is up (0.000072s latency).
+
+PORT     STATE SERVICE
+2121/tcp open  ccproxy-ftp
+
+Nmap done: 1 IP address (1 host up) scanned in 0.10 seconds
+
+### S05 ftp-07 :: mirror anonymous FTP :: exit=0 (33ms)
+$ rm -rf /tmp/oscp-lab/mirror && mkdir -p /tmp/oscp-lab/mirror && cd /tmp/oscp-lab/mirror && wget -m ftp://anonymous:anonymous@127.0.0.1:2121/ 2>&1 | tail -8 && find . -type f
+0K                                                       100%  190K=0s
+
+2026-10-29 18:15:53 (190 KB/s) - ‘127.0.0.1:2121/sub/app.conf’ saved [26]
+
+FINISHED --2026-10-29 18:15:53--
+Total wall clock time: 0.01s
+Downloaded: 4 files, 228 in 0.001s (224 KB/s)
+./127.0.0.1:2121/sub/app.conf
+./127.0.0.1:2121/sub/.listing
+./127.0.0.1:2121/readme.txt
+./127.0.0.1:2121/.listing
+
+### S05 ftp-09 :: triage downloaded files :: exit=0 (22ms)
+$ cd /tmp/oscp-lab/mirror && find . -type f -exec file {} + && grep -RIn -E 'pass|pwd|secret|token|key|user' .
+./127.0.0.1:2121/sub/app.conf: ASCII text
+./127.0.0.1:2121/sub/.listing: ASCII text, with CRLF line terminators
+./127.0.0.1:2121/readme.txt:   ASCII text
+./127.0.0.1:2121/.listing:     ASCII text, with CRLF line terminators
+./127.0.0.1:2121/sub/app.conf:1:user=admin pass=Secret123
+
+### S05 ftp-04 :: negative: bad FTP credentials :: exit=67 (3015ms)
+$ curl -s --max-time 5 ftp://bad:bad@127.0.0.1:2121/
+
+
+### S06 ssh-01 :: confirm SSH version :: exit=0 (244ms)
+$ nmap -sV -p22 127.0.0.1
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530
+Nmap scan report for localhost (127.0.0.1)
+Host is up (0.000063s latency).
+
+PORT   STATE SERVICE VERSION
+22/tcp open  ssh     OpenSSH 10.3p1 Debian 5 (protocol 2.0)
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 0.22 seconds
+
+### S06 ssh-02 :: ask for auth methods without a credential :: exit=255 (125ms)
+$ ssh -o PreferredAuthentications=none -o StrictHostKeyChecking=no -o BatchMode=yes ramki@127.0.0.1
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+ramki@127.0.0.1: Permission denied (publickey,password).
+
+### S06 ssh-02 :: nmap auth-methods cross-check :: exit=0 (140ms)
+$ nmap -p22 --script ssh-auth-methods 127.0.0.1
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530
+Nmap scan report for localhost (127.0.0.1)
+Host is up (0.000079s latency).
+
+PORT   STATE SERVICE
+22/tcp open  ssh
+| ssh-auth-methods: 
+|   Supported authentication methods: 
+|     publickey
+|_    password
+
+Nmap done: 1 IP address (1 host up) scanned in 0.13 seconds
+
+### S06 ssh-10 :: algorithm list :: exit=0 (129ms)
+$ nmap -p22 --script ssh2-enum-algos 127.0.0.1
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-29 18:15 +0530
+Nmap scan report for localhost (127.0.0.1)
+Host is up (0.000063s latency).
+
+PORT   STATE SERVICE
+22/tcp open  ssh
+| ssh2-enum-algos: 
+|   kex_algorithms: (10)
+|       mlkem768x25519-sha256
+|       sntrup761x25519-sha512
+|       sntrup761x25519-sha512@openssh.com
+|       curve25519-sha256
+|       curve25519-sha256@libssh.org
+|       ecdh-sha2-nistp256
+|       ecdh-sha2-nistp384
+|       ecdh-sha2-nistp521
+|       ext-info-s
+|       kex-strict-s-v00@openssh.com
+|   server_host_key_algorithms: (4)
+|       rsa-sha2-512
+|       rsa-sh
+
+### S06 ssh-03 :: verbose trace (no credential supplied) :: exit=0 (157ms)
+$ ssh -v -o BatchMode=yes -o StrictHostKeyChecking=no ramki@127.0.0.1 2>&1 | tail -12
+debug1: Will attempt key: /home/ramki/.ssh/id_ecdsa_sk 
+debug1: Will attempt key: /home/ramki/.ssh/id_ed25519_sk 
+debug1: Offering public key: /home/ramki/.ssh/id_ed25519 ED25519 SHA256:1HkfaGmsMGXt3859hOCgTjzAisxD+KDLfUOyhe5IXFs agent
+debug1: Authentications that can continue: publickey,password
+debug1: Offering public key: ramki479@github.com ED25519 SHA256:LFZJOPJTONadrA7pj+M7D/UqCCUiqoRmUNmzAeYrqdA agent
+debug1: Authentications that can continue: publickey,password
+debug1: Trying private key: /home/ramki/.ssh/id_rsa
+debug1: Trying private key: /home/ramki/.ssh/id_ecdsa
+debug1: Tryi
+
+### S06 ssh-04 :: environment check: sshpass prerequisite :: exit=0 (5ms)
+$ command -v sshpass || echo "sshpass NOT INSTALLED"
+sshpass NOT INSTALLED
+
+### S07 linux-privesc-01 :: identity and sudo rights :: exit=0 (64ms)
+$ timeout 8 bash -c 'id; whoami; sudo -l; sudo -V' 2>&1 | head -20
+uid=1000(ramki) gid=1000(ramki) groups=1000(ramki),4(adm),20(dialout),24(cdrom),25(floppy),27(sudo),29(audio),30(dip),44(video),46(plugdev),100(users),101(netdev),102(scanner),112(bluetooth),115(lpadmin),119(wireshark),124(kaboxer),126(docker)
+ramki
+sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper
+sudo: a password is required
+Sudo version 1.9.17p2
+Sudoers policy plugin version 1.9.17p2
+Sudoers file grammar version 50
+Sudoers I/O plugin version 1.9.17p2
+Sudoers audit plugin version 1.9.17p2
+
+### S07 linux-privesc-04 :: SUID enumeration :: exit=0 (17953ms)
+$ timeout 40 find / -perm -4000 -type f 2>/dev/null | head -30
+/usr/bin/kismet_cap_ubertooth_one
+/usr/bin/vmware-user-suid-wrapper
+/usr/bin/kismet_cap_rz_killerbee
+/usr/bin/pkexec
+/usr/bin/su
+/usr/bin/fusermount3
+/usr/bin/ntfs-3g
+/usr/bin/passwd
+/usr/bin/kismet_cap_nrf_52840
+/usr/bin/chsh
+/usr/bin/kismet_cap_linux_bluetooth
+/usr/bin/sudo
+/usr/bin/chfn
+/usr/bin/kismet_cap_nrf_mousejack
+/usr/bin/umount
+/usr/bin/kismet_cap_nxp_kw41z
+/usr/bin/kismet_cap_nrf_51822
+/usr/bin/newgrp
+/usr/bin/kismet_cap_ti_cc_2531
+/usr/bin/kismet_cap_hak5_wifi_coconut
+/usr/bin/mount
+/usr/bin/kismet_cap_ti_cc_2540
+/usr/bin/gpasswd
+/usr/bin/kismet_cap_linux_wifi
+/usr/lib/chromium/ch
+
+### S07 linux-privesc-07 :: capabilities :: exit=0 (13170ms)
+$ command -v getcap >/dev/null && timeout 30 getcap -r / 2>/dev/null | head -20 || echo "getcap NOT INSTALLED"
+/usr/bin/kwin_wayland cap_sys_nice=ep
+/usr/bin/fping cap_net_raw=ep
+/usr/bin/dumpcap cap_net_admin,cap_net_raw=eip
+/usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper cap_net_bind_service,cap_net_admin,cap_sys_nice=ep
+/usr/lib/x86_64-linux-gnu/libexec/org_kde_powerdevil cap_wake_alarm=ep
+/usr/lib/x86_64-linux-gnu/libexec/ksysguard/ksgrd_network_helper cap_net_raw=ep
+/usr/lib/nmap/nmap cap_net_bind_service,cap_net_admin,cap_net_raw=eip
+
+### S07 linux-privesc-09 :: scheduled work :: exit=0 (40ms)
+$ cat /etc/crontab; ls -la /etc/cron.d /etc/cron.daily 2>/dev/null; crontab -l 2>/dev/null; systemctl list-timers --all 2>/dev/null | head -6
+# /etc/crontab: system-wide crontab
+# Unlike any other crontab you don't have to run the `crontab'
+# command to install the new version when you edit this file
+# and files in /etc/cron.d. These files also have username fields,
+# that none of the other crontabs do.
+
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Example of job definition:
+# .---------------- minute (0 - 59)
+# |  .------------- hour (0 - 23)
+# |  |  .---------- day of month (1 - 31)
+# |  |  |  .------- month (1 - 12) OR jan,feb,mar,apr ...
+# |  |  |  |  .---- day of week (0 - 6) (Sunday=0 or 7
+
+### S07 linux-privesc-11 :: identity files permissions :: exit=0 (21ms)
+$ ls -la /etc/passwd /etc/shadow /etc/sudoers /etc/sudoers.d/ 2>/dev/null
+-rw-r--r-- 1 root root   3995 Oct 23 23:13 /etc/passwd
+-rw-r----- 1 root shadow 1824 Oct 23 23:13 /etc/shadow
+-r--r----- 1 root root   6617 Jun  8 13:02 /etc/sudoers
+
+/etc/sudoers.d/:
+total 24
+drwxr-xr-x   2 root root  4096 Apr  7  2026 .
+drwxr-xr-x 213 root root 12288 Oct 29 14:31 ..
+-r--r-----   1 root root   134 Nov  8  2024 kali-grant-root
+-r--r-----   1 root root    39 Jan  8  2026 ospd-openvas
+
+### S08 active-directory-01 :: no DC in lab: SMB banner from local non-DC Samba :: exit=0 (4799ms)
+$ nxc smb 127.0.0.1 2>&1 | head -8
+SMB                      127.0.0.1       445    FILESERVER       [*] Unix - Samba (name:FILESERVER) (domain:FILESERVER) (signing:False) (SMBv1:None) (Null Auth:True)
+
+### S08 active-directory-01 :: no DC in lab: LDAP SRV lookup :: exit=0 (24ms)
+$ dig @127.0.0.1 -p 5353 _ldap._tcp.corp.local SRV +short
+
+
+### S09 http-06 :: current shipped command (expected to fail) :: exit=1 (19ms)
+$ openssl s_client -connect 127.0.0.1:8443 -servername corp.local /dev/null | openssl x509 -noout -subject
+s_client: cannot provide both -connect option and target parameter
+s_client: Use -help for summary.
+Could not find certificate from <stdin>
+
+### S09 http-06 :: corrected form with stdin redirect :: exit=0 (47ms)
+$ openssl s_client -connect 127.0.0.1:8443 -servername corp.local </dev/null 2>/dev/null | openssl x509 -noout -subject
+subject=CN=corp.local
+
+### S09 linux-privesc-08 :: shipped capability command (interpreter lost by parser) :: exit=127 (3ms)
+$   -c 'print(open("/etc/shadow").read())'
+/bin/bash: line 1: -c: command not found
+
+### S10 directory-vhost-01 :: prerequisite check: wordlist paths :: exit=0 (9ms)
+$ ls /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt /usr/share/wordlists/dirb/common.txt 2>&1
+/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt
+/usr/share/wordlists/dirb/common.txt
+
+### S10 directory-vhost-03 :: negative: missing wordlist path :: exit=1 (20ms)
+$ ffuf -u http://127.0.0.1:8124/FUZZ -w /tmp/oscp-lab/does-not-exist.txt -mc 200 -ac -s
+Fuzz Faster U Fool - v2.1.0-dev
+
+HTTP OPTIONS:
+  -H                  Header `"Name: Value"`, separated by colon. Multiple -H flags are accepted.
+  -X                  HTTP method to use
+  -b                  Cookie data `"NAME1=VALUE1; NAME2=VALUE2"` for copy as curl functionality.
+  -cc                 Client cert for authentication. Client key needs to be defined as well for this to work
+  -ck                 Client key for authentication. Client certificate needs to be defined as well for this to work
+  -d                  POST data
+  -http2              Use HTTP2 protocol (default: false)
+
+
+### S10 directory-vhost-03 :: negative: closed web port :: exit=0 (135ms)
+$ ffuf -u http://127.0.0.1:9999/FUZZ -w /tmp/oscp-lab/words.txt -mc 200 -ac -s
+
+
+### S10 http-12 :: negative: crawler tool absent :: exit=0 (14ms)
+$ command -v hakrawler || echo "hakrawler NOT INSTALLED"; command -v katana || echo "katana NOT INSTALLED"
+hakrawler NOT INSTALLED
+katana NOT INSTALLED
+
+### S11 windows-privesc-15 :: shipped Get-Acl command text (backslashes lost) :: exit=0 (13ms)
+$ bash -n -c 'Get-Acl HKLM:SOFTWARE<VENDOR> | Format-List' 2>&1 || true
+bash: -c: line 1: syntax error near unexpected token `|'
+bash: -c: line 1: `Get-Acl HKLM:SOFTWARE<VENDOR> | Format-List'
+
+### S11 windows-privesc-05 :: service path lookup text on a Windows host (not executable here) :: exit=0 (6ms)
+$ echo simulated
+simulated
+
+TOTAL RUNS 53

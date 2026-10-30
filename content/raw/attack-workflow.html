@@ -1,0 +1,505 @@
+
+> <b>Purpose:</b> one ordered route through this handbook — from "VPN up" to "report submitted" — with a time box and a single next action for every phase.
+
+## How to use this page
+
+- Work <b>top to bottom</b>. Do not jump to exploitation before enumeration has produced a version, a credential or a reachable path.
+- Every phase names the page to open next.
+- Time boxes assume the 23h45m exam and 5 machines. Stretch them for practice; keep the order.
+
+## Phase 0 — Setup (first 15 minutes)
+
+<table header-row="true">
+<colgroup>
+<col />
+<col width="446" />
+<col width="71" />
+</colgroup>
+<tr>
+<td>
+Check
+</td>
+<td>
+Command / action
+</td>
+<td>
+Done
+</td>
+</tr>
+<tr>
+<td>
+VPN up
+</td>
+<td>
+<code>sudo openvpn <VPN_FILE>.ovpn</code>, then <code>ip a</code> shows <code>tun0</code>
+</td>
+<td>
+☐
+</td>
+</tr>
+<tr>
+<td>
+Workspace
+</td>
+<td>
+<code>mkdir -p ~/exam/recon ~/exam/loot ~/exam/notes ~/exam/report</code>
+</td>
+<td>
+☐
+</td>
+</tr>
+<tr>
+<td>
+Timer
+</td>
+<td>
+note the exam start time; 23:45 later is the hard stop
+</td>
+<td>
+☐
+</td>
+</tr>
+<tr>
+<td>
+Control panel
+</td>
+<td>
+read the <b>specific objectives</b> for each machine
+</td>
+<td>
+☐
+</td>
+</tr>
+<tr>
+<td>
+Notes
+</td>
+<td>
+one page per machine, using the Machine Notes template
+</td>
+<td>
+☐
+</td>
+</tr>
+</table>
+
+```bash
+mkdir -p ~/exam/{recon,loot,notes,report}
+sudo openvpn <VPN_FILE>.ovpn &
+sleep 5
+ip a | grep -A1 tun0
+```
+
+<b>Decision:</b> no <code>tun0</code> → reconnect before doing anything else. A broken tunnel looks exactly like a dead host.
+
+## Phase 1 — Enumeration (60-90 minutes per machine)
+
+1. <b>Is it up?</b> <code>ping -c 3 <TARGET_IP></code>; if silent, scan with <code>-Pn</code> anyway.
+2. <b>Full TCP range</b> — not just the top 1,000: <code>sudo nmap -p- --min-rate 5000 -T4 -oA <OUTPUT_DIR>/tcp_full <TARGET_IP></code>.
+3. <b>Version + default scripts</b> on the ports that answered: <code>sudo nmap -sCV -p <TARGET_PORT> -oA <OUTPUT_DIR>/svc <TARGET_IP></code>.
+4. <b>UDP</b> when the host looks sparse or the services suggest it (SNMP, DNS, IPMI): <code>sudo nmap -sU --top-ports 50 <TARGET_IP></code>.
+5. <b>Route each service to its page:</b>
+
+<table header-row="true">
+<colgroup>
+<col width="146" />
+<col width="162" />
+<col width="409" />
+</colgroup>
+<tr>
+<td>
+Port
+</td>
+<td>
+Service
+</td>
+<td>
+Open
+</td>
+</tr>
+<tr>
+<td>
+21
+</td>
+<td>
+FTP
+</td>
+<td>
+<mention url="https://app.notion.com/p/4011e51238b581df8e65eb2517720af2" />
+</td>
+</tr>
+<tr>
+<td>
+22
+</td>
+<td>
+SSH
+</td>
+<td>
+<mention url="https://app.notion.com/p/4011e51238b58123b446cc627bc02913" />
+</td>
+</tr>
+<tr>
+<td>
+53
+</td>
+<td>
+DNS
+</td>
+<td>
+<mention url="https://app.notion.com/p/4011e51238b581b49f33e6d71a304549" />
+</td>
+</tr>
+<tr>
+<td>
+80, 443, 8000, 8080, 8443
+</td>
+<td>
+HTTP/HTTPS
+</td>
+<td>
+<mention url="https://app.notion.com/p/4011e51238b581649211c0c5db9c94f8" />
+</td>
+</tr>
+<tr>
+<td>
+139, 445
+</td>
+<td>
+SMB
+</td>
+<td>
+<mention url="https://app.notion.com/p/4011e51238b581bbadcbe10d66d5ce31" />
+</td>
+</tr>
+<tr>
+<td>
+anything else
+</td>
+<td>
+unknown
+</td>
+<td>
+<mention url="https://app.notion.com/p/4011e51238b581669e09d615530aa92a" /> script lookup, then the service's own client
+</td>
+</tr>
+</table>
+
+<b>Decision:</b> full scan empty or only one odd port → re-scan with <code>-T3</code> (packet loss causes false negatives), check UDP, then move on. Do not spend two hours on a host that has nothing.
+
+## Phase 2 — Foothold
+
+Work in this order — each step is cheaper and more reliable than the next:
+
+1. <b>Known-vulnerable version</b> → research the exact build, read the exploit, then run it.
+2. <b>Reuse found credentials</b> across every service (SMB → WinRM → RDP → SSH → web login). This is the most common intended path.
+3. <b>Misconfiguration</b> — anonymous FTP, null SMB session, writable share, open NFS, exposed Git or backup files.
+4. <b>Web application flaw</b> — upload, traversal, IDOR, default login, exposed admin panel.
+5. <b>Brute force</b> — last resort, and only after reading the password policy.
+
+<b>Rules that save points:</b>
+
+- Read every exploit before running it; note its prerequisites.
+- Capture the proof the moment you land — shells die, reverts happen.
+- Never leave a box in a broken state for a later objective.
+- Keep a revert log; you have 24 reverts, resettable once.
+
+## Phase 3 — Local enumeration and privilege escalation
+
+<table header-row="true">
+<colgroup>
+<col />
+<col width="446" />
+<col width="266" />
+</colgroup>
+<tr>
+<td>
+Platform
+</td>
+<td>
+First commands
+</td>
+<td>
+Page
+</td>
+</tr>
+<tr>
+<td>
+Linux
+</td>
+<td>
+<code>id; sudo -l; uname -a; find / -perm -4000 -type f 2>/dev/null</code>
+</td>
+<td>
+Linux Privilege Escalation <i>(batch 4)</i>
+</td>
+</tr>
+<tr>
+<td>
+Windows
+</td>
+<td>
+<code>whoami /priv; systeminfo; net user; tasklist /svc</code>
+</td>
+<td>
+Windows Privilege Escalation <i>(batch 4)</i>
+</td>
+</tr>
+</table>
+
+Full triage order and exploitation paths live on those two pages. This page only tells you <b>when</b> to go there: immediately after the first shell, not after you get stuck.
+
+## Phase 4 — Active Directory set
+
+The AD set hands you a <b>username and password</b> — start from there, not from a port scan.
+
+1. Enumerate the domain with the credential (users, groups, computers, sessions).
+2. Kerberoast and AS-REP roast; crack offline.
+3. Read the password policy <b>before</b> spraying.
+4. Run BloodHound and read the shortest path.
+5. Abuse ACLs, delegation or local admin → DCSync.
+6. Prove admin on each of the three machines as you go.
+
+Full command reference: [Active Directory — Complete Command Reference](https://app.notion.com/p/4011e51238b58122ac9bc9c86520d03e) .
+
+## Phase 5 — Proof capture
+
+The proof rules are strict and mechanical:
+
+```bash
+# Linux
+cat /root/proof.txt; cat /home/<USER>/local.txt
+ip addr
+# Windows
+type C:\Users\Administrator\Desktop\proof.txt
+ipconfig
+```
+
+- Read the file <b>from its original location</b>, in an <b>interactive shell</b>, with <code>cat</code> or <code>type</code>.
+- The screenshot must show the file contents <b>and</b> the target IP from <code>ipconfig</code>/<code>ifconfig</code>/<code>ip addr</code>.
+- Submit the contents in the <b>control panel before the exam ends</b>.
+- A web shell, or any other method of reading the file, scores <b>zero</b> for that machine.
+
+## Phase 6 — Reporting
+
+1. Export the report to <b>PDF</b>.
+2. Name it <code>OSCP-OS-XXXXX-Exam-Report.pdf</code>.
+3. Archive to <code>.7z</code> (no password), same base name.
+4. Upload within <b>24 hours</b> to [upload.offsec.com](http://upload.offsec.com) and verify the MD5 hash.
+
+Details and the full submission checklist: [OSCP Exam Checklist & Evidence Collection](https://app.notion.com/p/4011e51238b58192a726f4738738085a) .
+
+## Time budget (23h45m total)
+
+<table header-row="true">
+<colgroup>
+<col />
+<col />
+<col width="379" />
+</colgroup>
+<tr>
+<td>
+Block
+</td>
+<td>
+Suggested
+</td>
+<td>
+Content
+</td>
+</tr>
+<tr>
+<td>
+0\:00-0\:15
+</td>
+<td>
+15 min
+</td>
+<td>
+VPN, workspace, notes, objectives
+</td>
+</tr>
+<tr>
+<td>
+0\:15-4\:15
+</td>
+<td>
+4 h
+</td>
+<td>
+Strongest standalone machine, start to proof
+</td>
+</tr>
+<tr>
+<td>
+4\:15-8\:15
+</td>
+<td>
+4 h
+</td>
+<td>
+Second standalone
+</td>
+</tr>
+<tr>
+<td>
+8\:15-12\:15
+</td>
+<td>
+4 h
+</td>
+<td>
+Third standalone
+</td>
+</tr>
+<tr>
+<td>
+12\:15-17\:15
+</td>
+<td>
+5 h
+</td>
+<td>
+AD set (all three machines)
+</td>
+</tr>
+<tr>
+<td>
+17\:15-20\:15
+</td>
+<td>
+3 h
+</td>
+<td>
+Return to the weakest machine
+</td>
+</tr>
+<tr>
+<td>
+20\:15-22\:15
+</td>
+<td>
+2 h
+</td>
+<td>
+Report writing
+</td>
+</tr>
+<tr>
+<td>
+22\:15-23\:45
+</td>
+<td>
+1.5 h
+</td>
+<td>
+Buffer, proof checks, submission prep
+</td>
+</tr>
+</table>
+
+Sleep is part of the plan. A tired decision at hour 18 costs more than the extra hour earns.
+
+## When you are stuck
+
+<table header-row="true">
+<colgroup>
+<col />
+<col width="456" />
+</colgroup>
+<tr>
+<td>
+Situation
+</td>
+<td>
+Next action
+</td>
+</tr>
+<tr>
+<td>
+No open ports
+</td>
+<td>
+Re-scan <code>-T3</code> (loss), check UDP, confirm the IP, then move on
+</td>
+</tr>
+<tr>
+<td>
+Ports, no credentials
+</td>
+<td>
+Version research, one default-credential attempt, read the web app
+</td>
+</tr>
+<tr>
+<td>
+Credentials, no admin
+</td>
+<td>
+Re-enumerate shares with the new identity; run BloodHound; local privesc
+</td>
+</tr>
+<tr>
+<td>
+Local privesc blocked
+</td>
+<td>
+Services, scheduled tasks, <code>sudo -l</code>, kernel, credentials on disk
+</td>
+</tr>
+<tr>
+<td>
+Exploit fails twice
+</td>
+<td>
+Stop. Re-read the version and prerequisites; your target may be patched
+</td>
+</tr>
+<tr>
+<td>
+90 minutes, no progress
+</td>
+<td>
+Revert, re-read the objectives, switch machine — come back fresh
+</td>
+</tr>
+</table>
+
+## Common failure modes
+
+- Stopping at the top-1,000 port scan and missing the real service.
+- Not re-enumerating after every new credential.
+- Running an exploit without reading it, then losing the box.
+- Forgetting the proof screenshot <b>with the IP visible</b>.
+- Submitting proofs after the exam window closes.
+- Using a restricted tool (SQLmap, mass scanners, AI assistants) and losing the machine.
+
+## Evidence discipline
+
+- Directory per machine: <code>~/exam/loot/<TARGET_IP>/</code>.
+- File naming: <code><TARGET_IP>-<service>-<step>-<timestamp>.txt</code>.
+- Paste the <b>command and its output</b> into the notes as you go — reconstructing it later is where points are lost.
+
+## Related pages
+
+<ul>
+<li>
+<mention url="https://app.notion.com/p/4011e51238b581669e09d615530aa92a" /> · <mention url="https://app.notion.com/p/4011e51238b581649211c0c5db9c94f8" /> · <mention url="https://app.notion.com/p/4011e51238b581bbadcbe10d66d5ce31" /> · <mention url="https://app.notion.com/p/4011e51238b581df8e65eb2517720af2" /> · <mention url="https://app.notion.com/p/4011e51238b581b49f33e6d71a304549" /> · <mention url="https://app.notion.com/p/4011e51238b58123b446cc627bc02913" />
+</li>
+<li>
+[Active Directory — Complete Command Reference](https://app.notion.com/p/4011e51238b58122ac9bc9c86520d03e) 
+</li>
+<li>
+[OSCP Exam Rules & Tool Restrictions](https://app.notion.com/p/4011e51238b5812ab0e1f4ed40981967) 
+</li>
+<li>
+[OSCP Machine Notes — Template](https://app.notion.com/p/4011e51238b5811cb117f8335df3a46f) 
+</li>
+<li>
+[OSCP Exam Checklist & Evidence Collection](https://app.notion.com/p/4011e51238b58192a726f4738738085a) 
+</li>
+</ul>
+
+## Verification note
+
+Every command here repeats syntax verified on its own tool page — nothing on this page was executed against a live target. Timings are planning guidance, not measurements.

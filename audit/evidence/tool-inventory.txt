@@ -1,0 +1,104 @@
+PRESENT (122):
+awk, base64, bind, bloodhound, bloodhound-python, cat, cd, chisel, chmod, cp, crackmapexec, crontab, curl, date, dig, dir, dnsenum, dnsrecon, docker, done, echo, enum4linux-ng, env, evil-winrm, exec, export, feroxbuster, ffuf, file, find, for, ftp, gcc, getcap, getent, git, gobuster, grep, hashcat, hashid, head, hydra, id, if, impacket-GetNPUsers, impacket-GetUserSPNs, impacket-addcomputer, impacket-atexec, impacket-changepasswd, impacket-dacledit, impacket-getST, impacket-getTGT, impacket-mssqlclient, impacket-owneredit, impacket-psexec, impacket-rbcd, impacket-secretsdump, impacket-smbexec, impacket-smbserver, impacket-wmiexec, in, ip, john, kerbrute, ldapsearch, ls, md5sum, mkdir, mount, msfconsole, msfvenom, mysql, nc, neo4j, net, netstat, nikto, nmap, node, nxc, onesixtyone, openssl, pip3, printf, proxychains4, ps, python, python3, rlwrap, rpcclient, scp, script, searchsploit, set, sha256sum, showmount, smbclient, smbmap, smtp-user-enum, snmpwalk, socat, ss, ssh, ssh-keygen, ssh2john, sslscan, stty, su, systemctl, tar, tcpdump, then, type, uname, vim, wait, wc, wget, whatweb, whoami, xfreerdp, xsltproc
+
+MISSING (98):
+--version, -l, AddMember, EXPN, ForceChangePassword, GTFOBins, Get-Acl, Get-FileHash, GodPotato.exe, IWR, Invoke-PetitPotam.ps1, Invoke-WebRequest, Kali, MAIL, MATCH, PrintSpoofer.exe, RCPT, RETURN, SELECT, SHOW, SSH, SharpHound.exe, VRFY, Windows, WriteDACL, WriteOwner, accesschk.exe, alternative, append, at, attach, banner, binary, bloodyAD, cap_dac_read_search, cap_setuid, certipy, certutil, cmdkey, copy, decode, download, enable_xp_cmdshell, encode, example, from, get, hakrawler, icacls, ipconfig, katana, klist, lftp, loot, lsadump, misc, msiexec, netsh, non-standard, ntlmrelayx.py, older, on, once, one, optional, or, powershell, put, receive, reg, rpcdump.py, run, same, sc, scans, schtasks, scriptable, scrot, secretsdump.py, send, serve, shell, shots, single, smbserver.py, sshpass, sshuttle, systeminfo, target, tasklist, testssl.sh, typical, upload, use, with, without, wmic, xp_cmdshell
+
+--version: used by linux-privesc-03
+-l: used by linux-privesc-02
+AddMember: used by active-directory-15
+EXPN: used by other-services-03
+ForceChangePassword: used by active-directory-15
+GTFOBins: used by linux-privesc-05
+Get-Acl: used by windows-privesc-15
+Get-FileHash: used by shells-15
+GodPotato.exe: used by windows-privesc-14
+IWR: used by shells-11
+Invoke-PetitPotam.ps1: used by bleeding-edge-15
+Invoke-WebRequest: used by shells-11
+Kali: used by shells-03
+MAIL: used by other-services-03
+MATCH: used by bloodhound-05, bloodhound-06, bloodhound-07
+PrintSpoofer.exe: used by windows-privesc-14
+RCPT: used by other-services-03
+RETURN: used by bloodhound-05, bloodhound-06
+SELECT: used by other-services-07, other-services-08
+SHOW: used by other-services-07
+SSH: used by tunneling-10
+SharpHound.exe: used by bloodhound-03
+VRFY: used by other-services-03
+Windows: used by active-directory-24, shells-05, shells-15
+WriteDACL: used by active-directory-15
+WriteOwner: used by active-directory-15
+accesschk.exe: used by windows-privesc-07
+alternative: used by bloodhound-08, exam-execution-06
+append: used by linux-privesc-12
+at: used by ftp-06, ftp-08, ftp-11
+attach: used by other-services-12
+banner: used by shells-06
+binary: used by ftp-06, ftp-08
+bloodyAD: used by bloodhound-13
+cap_dac_read_search: used by linux-privesc-08
+cap_setuid: used by linux-privesc-08
+certipy: used by active-directory-19, active-directory-20
+certutil: used by shells-10, shells-15
+cmdkey: used by windows-privesc-11
+copy: used by shells-05, shells-12
+decode: used by shells-14
+download: used by shells-09
+enable_xp_cmdshell: used by other-services-08
+encode: used by shells-14
+example: used by tunneling-01, tunneling-02
+from: used by other-services-12
+get: used by ftp-08
+hakrawler: used by http-12
+icacls: used by windows-privesc-05, windows-privesc-06
+ipconfig: used by active-directory-24
+katana: used by http-12
+klist: used by bleeding-edge-17, bleeding-edge-23
+lftp: used by ftp-05
+loot: used by exam-execution-02
+lsadump: used by bleeding-edge-23
+misc: used by bleeding-edge-15
+msiexec: used by windows-privesc-10
+netsh: used by tunneling-08
+non-standard: used by shells-09
+ntlmrelayx.py: used by bleeding-edge-13
+older: used by other-services-02, passwords-07
+on: used by linux-privesc-15, linux-privesc-20
+once: used by other-services-07, other-services-08
+one: used by passwords-02
+optional: used by shells-07
+or: used by shells-01, shells-12, tunneling-10
+powershell: used by windows-privesc-18
+put: used by ftp-11
+receive: used by shells-06
+reg: used by windows-privesc-09, windows-privesc-11, windows-privesc-12
+rpcdump.py: used by bleeding-edge-07
+run: used by bleeding-edge-10
+same: used by active-directory-06
+sc: used by windows-privesc-04, windows-privesc-05, windows-privesc-06
+scans: used by exam-execution-02
+schtasks: used by windows-privesc-08
+scriptable: used by troubleshooting-03
+scrot: used by exam-execution-06
+secretsdump.py: used by bleeding-edge-18, bleeding-edge-21
+send: used by shells-06
+serve: used by linux-privesc-20
+shell: used by bleeding-edge-12
+shots: used by exam-execution-02
+single: used by passwords-12
+smbserver.py: used by bleeding-edge-09
+sshpass: used by ssh-04
+sshuttle: used by tunneling-09
+systeminfo: used by windows-privesc-02, windows-privesc-19
+target: used by shells-03
+tasklist: used by windows-privesc-16
+testssl.sh: used by http-07
+typical: used by tunneling-09
+upload: used by shells-09, tunneling-06
+use: used by bleeding-edge-10
+with: used by active-directory-08, passwords-03
+without: used by active-directory-08, exploit-research-10
+wmic: used by windows-privesc-02, windows-privesc-04
+xp_cmdshell: used by other-services-08

@@ -1,0 +1,646 @@
+{
+ "variables": [
+  {
+   "token": "ATTACKER_IP",
+   "label": "Attack IP",
+   "group": "network",
+   "example": "10.10.14.5",
+   "sensitive": false,
+   "aliases": [
+    "LHOST",
+    "ATTACK_IP"
+   ],
+   "description": "",
+   "occurrences": 23,
+   "inCommands": 21
+  },
+  {
+   "token": "BASE64_BLOB",
+   "label": "Base64 blob",
+   "group": "other",
+   "example": "...",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "BASELINE_SIZE",
+   "label": "Baseline response size",
+   "group": "other",
+   "example": "1234",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 3,
+   "inCommands": 3
+  },
+  {
+   "token": "BINARY",
+   "label": "Binary",
+   "group": "paths",
+   "example": "payload.exe",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 5,
+   "inCommands": 5
+  },
+  {
+   "token": "CA_NAME",
+   "label": "CA name",
+   "group": "other",
+   "example": "corp-CA",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "COOKIE_VALUE",
+   "label": "Cookie value",
+   "group": "other",
+   "example": "session=...",
+   "sensitive": true,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "DC_HOSTNAME",
+   "label": "DC hostname",
+   "group": "other",
+   "example": "dc01",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 2,
+   "inCommands": 2
+  },
+  {
+   "token": "DEFAULT_VHOST_SIZE",
+   "label": "Default vhost size",
+   "group": "other",
+   "example": "1234",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 2,
+   "inCommands": 2
+  },
+  {
+   "token": "DOMAIN",
+   "label": "Domain",
+   "group": "network",
+   "example": "corp.local",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 123,
+   "inCommands": 117
+  },
+  {
+   "token": "DOMAIN_CONTROLLER_IP",
+   "label": "Domain controller IP",
+   "group": "network",
+   "example": "10.10.10.5",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 52,
+   "inCommands": 51
+  },
+  {
+   "token": "DOMAIN_PART1",
+   "label": "Domain (first part)",
+   "group": "network",
+   "example": "corp",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "DOMAIN_PART2",
+   "label": "Domain (TLD)",
+   "group": "network",
+   "example": "local",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "EDB_ID",
+   "label": "Exploit-DB ID",
+   "group": "other",
+   "example": "50383",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 3,
+   "inCommands": 3
+  },
+  {
+   "token": "FILE",
+   "label": "File",
+   "group": "paths",
+   "example": "shell.php",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 41,
+   "inCommands": 36
+  },
+  {
+   "token": "GROUP",
+   "label": "Group",
+   "group": "other",
+   "example": "Domain Admins",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "HASH_FILE",
+   "label": "Hash file",
+   "group": "paths",
+   "example": "hashes.txt",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 15,
+   "inCommands": 15
+  },
+  {
+   "token": "HTTP_PORT",
+   "label": "HTTP port",
+   "group": "network",
+   "example": "8080",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "INTERFACE",
+   "label": "Interface",
+   "group": "network",
+   "example": "tun0",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 3,
+   "inCommands": 3
+  },
+  {
+   "token": "INTERNAL_IP",
+   "label": "Internal target IP",
+   "group": "network",
+   "example": "172.16.1.20",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 8,
+   "inCommands": 7
+  },
+  {
+   "token": "KEYWORD",
+   "label": "Keyword",
+   "group": "other",
+   "example": "password",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 4,
+   "inCommands": 4
+  },
+  {
+   "token": "KEY_FILE",
+   "label": "Key file",
+   "group": "paths",
+   "example": "id_rsa",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 10,
+   "inCommands": 8
+  },
+  {
+   "token": "LOCAL_PORT",
+   "label": "Local port",
+   "group": "network",
+   "example": "4444",
+   "sensitive": false,
+   "aliases": [
+    "LPORT"
+   ],
+   "description": "",
+   "occurrences": 42,
+   "inCommands": 32
+  },
+  {
+   "token": "NEW_PASSWORD",
+   "label": "New password",
+   "group": "credentials",
+   "example": "P@ssw0rd2026!",
+   "sensitive": true,
+   "aliases": [],
+   "description": "",
+   "occurrences": 4,
+   "inCommands": 4
+  },
+  {
+   "token": "NTHASH",
+   "label": "NTLM hash",
+   "group": "credentials",
+   "example": "aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0",
+   "sensitive": true,
+   "aliases": [
+    "HASH"
+   ],
+   "description": "",
+   "occurrences": 14,
+   "inCommands": 10
+  },
+  {
+   "token": "OUTPUT_DIR",
+   "label": "Output directory",
+   "group": "paths",
+   "example": "/home/kali/loot",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 15,
+   "inCommands": 12
+  },
+  {
+   "token": "OUTPUT_FILE",
+   "label": "Output file",
+   "group": "paths",
+   "example": "/home/kali/loot/scan.txt",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 34,
+   "inCommands": 30
+  },
+  {
+   "token": "PASSWORD",
+   "label": "Password",
+   "group": "credentials",
+   "example": "Password123",
+   "sensitive": true,
+   "aliases": [],
+   "description": "",
+   "occurrences": 87,
+   "inCommands": 84
+  },
+  {
+   "token": "PATH",
+   "label": "Path",
+   "group": "paths",
+   "example": "/var/www/html",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "PIVOT1_IP",
+   "label": "First pivot IP",
+   "group": "network",
+   "example": "10.10.10.50",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "PIVOT2_IP",
+   "label": "Second pivot IP",
+   "group": "network",
+   "example": "172.16.1.10",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "PIVOT_IP",
+   "label": "Pivot IP",
+   "group": "network",
+   "example": "10.10.10.50",
+   "sensitive": false,
+   "aliases": [
+    "PIVOT_HOST"
+   ],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 0
+  },
+  {
+   "token": "PRODUCT",
+   "label": "Product",
+   "group": "other",
+   "example": "Apache",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "RANDOM",
+   "label": "Random value",
+   "group": "other",
+   "example": "1337",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "REMOTE_PORT",
+   "label": "Remote port",
+   "group": "network",
+   "example": "3389",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 12,
+   "inCommands": 5
+  },
+  {
+   "token": "RID",
+   "label": "RID",
+   "group": "other",
+   "example": "500",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 0
+  },
+  {
+   "token": "SERVICE",
+   "label": "Service",
+   "group": "other",
+   "example": "http",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 3,
+   "inCommands": 3
+  },
+  {
+   "token": "SERVICE_NAME",
+   "label": "Service name",
+   "group": "other",
+   "example": "spooler",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 4,
+   "inCommands": 4
+  },
+  {
+   "token": "SERVICE_PORT",
+   "label": "Service port",
+   "group": "network",
+   "example": "8080",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 0
+  },
+  {
+   "token": "SHARE_NAME",
+   "label": "Share name",
+   "group": "paths",
+   "example": "backups",
+   "sensitive": false,
+   "aliases": [
+    "SHARE"
+   ],
+   "description": "",
+   "occurrences": 8,
+   "inCommands": 7
+  },
+  {
+   "token": "STEP",
+   "label": "Step number",
+   "group": "other",
+   "example": "1",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "SUBDIR",
+   "label": "Subdirectory",
+   "group": "paths",
+   "example": "admin",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "TARGET",
+   "label": "Target host",
+   "group": "network",
+   "example": "fileserver",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 3,
+   "inCommands": 2
+  },
+  {
+   "token": "TARGET_ACCOUNT",
+   "label": "Target account",
+   "group": "credentials",
+   "example": "CORP\\svc_backup",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 2,
+   "inCommands": 2
+  },
+  {
+   "token": "TARGET_GROUP",
+   "label": "Target group",
+   "group": "credentials",
+   "example": "Domain Admins",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "TARGET_HOST",
+   "label": "Target hostname",
+   "group": "network",
+   "example": "fileserver",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 2,
+   "inCommands": 2
+  },
+  {
+   "token": "TARGET_IP",
+   "label": "Target IP",
+   "group": "network",
+   "example": "10.10.10.10",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 232,
+   "inCommands": 222
+  },
+  {
+   "token": "TARGET_PORT",
+   "label": "Target port",
+   "group": "network",
+   "example": "445",
+   "sensitive": false,
+   "aliases": [
+    "PORT"
+   ],
+   "description": "",
+   "occurrences": 22,
+   "inCommands": 21
+  },
+  {
+   "token": "TARGET_USER",
+   "label": "Target user",
+   "group": "credentials",
+   "example": "svc_backup",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 5,
+   "inCommands": 4
+  },
+  {
+   "token": "TEMPLATE",
+   "label": "Certificate template",
+   "group": "other",
+   "example": "UserAuthentication",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "TLD",
+   "label": "Top-level domain",
+   "group": "network",
+   "example": "local",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "TOKEN",
+   "label": "Token",
+   "group": "other",
+   "example": "...",
+   "sensitive": true,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "USERLIST",
+   "label": "User list",
+   "group": "paths",
+   "example": "/usr/share/seclists/Usernames/xato-net-10-million-usernames.txt",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 5,
+   "inCommands": 5
+  },
+  {
+   "token": "USERNAME",
+   "label": "Username",
+   "group": "credentials",
+   "example": "administrator",
+   "sensitive": false,
+   "aliases": [
+    "USER"
+   ],
+   "description": "",
+   "occurrences": 129,
+   "inCommands": 123
+  },
+  {
+   "token": "VENDOR",
+   "label": "Vendor",
+   "group": "other",
+   "example": "Microsoft",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 2,
+   "inCommands": 2
+  },
+  {
+   "token": "VERSION",
+   "label": "Version",
+   "group": "other",
+   "example": "2.4.49",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 1,
+   "inCommands": 1
+  },
+  {
+   "token": "WHAT",
+   "label": "Search string",
+   "group": "other",
+   "example": "password",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 2,
+   "inCommands": 2
+  },
+  {
+   "token": "WORDLIST",
+   "label": "Wordlist",
+   "group": "paths",
+   "example": "/usr/share/seclists/Discovery/Web-Content/common.txt",
+   "sensitive": false,
+   "aliases": [],
+   "description": "",
+   "occurrences": 47,
+   "inCommands": 47
+  }
+ ]
+}

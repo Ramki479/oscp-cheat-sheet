@@ -1,0 +1,296 @@
+
+> <b>Purpose:</b> fingerprint the web app, map its surface, and know which request to send next — with passive checks separated from intrusive ones.
+
+## Quick navigation
+
+- <b>1.</b> Detect and fingerprint
+- <b>2.</b> Headers, status codes, redirects, cookies
+- <b>3.</b> robots.txt, sitemap and source
+- <b>4.</b> TLS and certificates
+- <b>5.</b> Virtual-host discovery
+- <b>6.</b> Authentication mechanisms
+- <b>7.</b> JavaScript and endpoint discovery
+- <b>8.</b> Application-level manual testing
+- <b>9.</b> Burp Suite handoff
+- <b>10.</b> Troubleshooting
+- <b>11.</b> Quick workflow
+- <b>12.</b> Evidence to preserve
+- <b>13.</b> Related pages
+- <b>14.</b> References
+- <b>15.</b> Verification note
+
+<b>Priority:</b> Core / Conditional / Advanced. <b>Status:</b> <b>Lab Tested</b> = executed against an authorised lab target · <b>Simulated</b> = exercised with simulated output or fixtures · <b>Syntax Checked</b> = flags checked against the installed tool here · <b>Environment Dependent</b> = needs a specific tool, version or host configuration · <b>Documented</b> = standard technique, not run here.
+
+## Prerequisites and execution location
+
+- <b>Runs on:</b> Kali Linux.
+- <b>Needs:</b> <code>curl</code>, <code>whatweb</code>, <code>nikto</code>, <code>openssl</code>, <code>ffuf</code> (installed); <code>sslscan</code>, <code>testssl.sh</code>, <code>hakrawler</code>, <code>katana</code> (optional).
+- <b>Three tiers, keep them separate:</b>
+  - <b>Passive fingerprinting</b> — headers, titles, certificates. Safe, low noise.
+  - <b>Manual validation</b> — fetch a path, read the response. Still safe.
+  - <b>Intrusive checks</b> — fuzzing, auth attempts, injection probes. Can lock accounts, trigger WAFs or crash the app. Only with authorisation.
+
+## Pivoting variant — internal hosts only
+
+<code>proxychains4 curl -i -sS http://<TARGET_IP>/</code> works for single requests. For anything stateful (sessions, Burp, a browser), forward the port instead: <code>ssh -L 8080:<TARGET_IP>:80 <USERNAME>@<PIVOT_HOST></code> and browse <code>http://127.0.0.1:8080/</code> — that keeps cookies, redirects and Burp's proxy chain intact.
+
+## 1. Detect and fingerprint
+
+### Step 01 — Identify the web service
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -sCV -p<HTTP_PORT> --script http-title,http-headers,http-methods <TARGET_IP>
+```
+
+<b>Look for:</b> server banner, page title, allowed methods (<code>PUT</code>, <code>DELETE</code> are leads), redirects.<br /><b>Decision:</b> non-standard port or odd banner → Step 02. <code>PUT</code> allowed → note it, do not upload.<br /><b>Next:</b> Step 02.<br /><b>Common mistake:</b> scanning only 80/443. Repeat for every HTTP-ish port from the full scan (8080, 8000, 8443, 3000, 5000).<br /><b>Evidence:</b> the title/server pair for each port — they often differ per vhost.
+
+### Step 02 — Fingerprint the stack
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+whatweb -a 1 http://<TARGET_IP>/
+whatweb -a 3 http://<TARGET_IP>/ --no-errors
+```
+
+<b>Look for:</b> CMS + version, framework, JS libraries, server, cookies set by the app.<br /><b>Decision:</b> a CMS with a version → search for matching plugins/CVEs. A custom app → go to Step 03 and manual review.<br /><b>Next:</b> Step 03.<br /><b>Common mistake:</b> <code>-a 3</code> is aggressive and detectable; start with <code>-a 1</code> and only escalate when you need more detail.<br /><b>Evidence:</b> the plugin/version list.
+
+<b>Old page content preserved:</b> the original <code>WhatWeb</code> note also used <code>whatweb --no-errors 192.168.1.0/24</code> (network sweep) and <code>whatweb -v</code>. Both are valid; the sweep form is only useful on a subnet you own.
+
+## 2. Headers, status codes, redirects, cookies
+
+### Step 03 — Read the response properly
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+curl -i -sS http://<TARGET_IP>/
+curl -i -sS -L http://<TARGET_IP>/ -o <OUTPUT_FILE>
+curl -I -sS https://<TARGET_IP>/ -k
+```
+
+<b>Look for:</b> <code>Server:</code>, <code>X-Powered-By:</code>, <code>Set-Cookie:</code>, <code>Location:</code>, security headers that are missing.<br /><b>Decision:</b> <code>Location:</code> to a hostname → add it to <code>/etc/hosts</code> and re-request. Cookie flags missing (<code>HttpOnly</code>, <code>Secure</code>) → note for later.<br /><b>Next:</b> Step 04.<br /><b>Common mistake:</b> <code>-I</code> sends HEAD; some apps behave differently than with GET. Use <code>-i</code> when the body matters.<br /><b>Evidence:</b> the full header block.
+
+<b>Old page content preserved:</b> the original <code>curl</code> note listed <code>curl -v</code>, <code>curl -X POST</code>, and <code>curl -IL</code>. All still valid: <code>-v</code> for the TLS/connection trace, <code>-X POST -d 'a=b'</code> for form posts, <code>-IL</code> for headers after redirects.
+
+### Step 04 — Compare codes and redirects across paths
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+for p in / /admin /login /api /robots.txt; do
+  printf '%-12s ' "$p"; curl -s -o /dev/null -w '%{http_code} %{size_download} %{redirect_url}\n' "http://<TARGET_IP>$p"
+done
+```
+
+<b>Look for:</b> 200 vs 301/302 vs 401/403 vs 404, and different response sizes.<br /><b>Decision:</b> 401/403 proves the path exists — worth deeper inspection. 302 to <code>/login</code> is normal for a protected app.<br /><b>Next:</b> Step 05.<br /><b>Common mistake:</b> treating every 200 as "found" — wildcard/catch-all apps return 200 for everything; compare body sizes.<br /><b>Evidence:</b> the code/size table.
+
+## 3. robots.txt, sitemap and source
+
+### Step 05 — Read the app's own hints
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+curl -sS http://<TARGET_IP>/robots.txt
+curl -sS http://<TARGET_IP>/sitemap.xml
+curl -sS http://<TARGET_IP>/ | grep -Eo '(src|href)="[^"]+"' | sort -u
+```
+
+<b>Look for:</b> <code>Disallow:</code> paths, sitemap URLs, script/style references, comments in the HTML.<br /><b>Decision:</b> any listed path → request it directly. JS files → Step 08.<br /><b>Next:</b> Step 06.<br /><b>Common mistake:</b> checking robots only on the main host — each vhost has its own.<br /><b>Evidence:</b> the disallowed paths and any endpoint-looking URL.
+
+## 4. TLS and certificates
+
+### Step 06 — Inspect the certificate
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+openssl s_client -connect <TARGET_IP>:443 -servername <DOMAIN> </dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates -ext subjectAltName
+```
+
+<b>Look for:</b> CN, SANs, validity dates, internal issuer.<br /><b>Decision:</b> SANs contain hostnames you have not seen → add them to <code>/etc/hosts</code> and probe.<br /><b>Next:</b> Step 07.<br /><b>Common mistake:</b> omitting <code>-servername</code> — without SNI you get the default vhost's certificate and miss the rest.<br /><b>Evidence:</b> the SAN list — often the cheapest source of new hostnames.
+
+<b>Old page content preserved:</b> <code>openssl s_client -connect example.com:443</code> (the original note) is the same command without SNI or the certificate decode pipe.
+
+### Step 07 — Enumerate TLS configuration
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Environment Dependent
+
+```bash
+sslscan <TARGET_IP>:443
+testssl.sh --quiet <TARGET_IP>:443
+```
+
+<b>Prerequisites:</b> <code>sslscan</code> is installed and its flags were checked; <code>testssl.sh</code> is <b>not</b> installed on the build host used for this audit (<code>sudo apt install testssl.sh</code>, or the upstream git checkout on <code>$PATH</code>) — that missing second command is why this step is <b>Environment Dependent</b>. Step 06 (<code>openssl s_client</code>) answers the same certificate questions with no extra tooling.
+
+<b>Look for:</b> protocol versions, weak ciphers, expired/self-signed certificates, known TLS CVEs.<br /><b>Decision:</b> legacy protocols enabled → note it as a hardening finding. It is rarely a direct path to a shell.<br /><b>Next:</b> Step 09.<br /><b>Common mistake:</b> reporting a TLS weakness as an exploitation finding — it is a configuration issue unless you can demonstrate impact.<br /><b>Evidence:</b> the protocol/cipher summary line.
+
+## 5. Virtual-host discovery
+
+### Step 08 — Find hidden vhosts
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ffuf -u http://<TARGET_IP>/ -H "Host: FUZZ.<DOMAIN>" -w <WORDLIST> -ac -mc all -fc 404
+```
+
+<b>Look for:</b> a different body size or status per <code>Host</code> value.<br /><b>Decision:</b> a hit → add it to <code>/etc/hosts</code> and run Steps 01-05 against it as a new site.<br /><b>Next:</b> Step 09.<br /><b>Common mistake:</b> relying on status codes — many servers return 200 for unknown hosts. Filter by size, or use <code>-ac</code>.<br /><b>Evidence:</b> the vhost name and its size difference.
+
+> <b>Content discovery belongs on one page.</b> Wordlist-driven directory/file brute force (<code>feroxbuster</code>, <code>gobuster</code>, <code>ffuf</code> path mode) is documented in <b>Directory and Virtual Host Enumeration — Complete Command Reference</b> <i>(batch 5)</i>. This page covers the manual and fingerprinting side only, so the two never drift apart.
+
+## 6. Authentication mechanisms
+
+### Step 09 — Identify the auth type
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+curl -i -sS http://<TARGET_IP>/admin
+curl -i -sS -u <USERNAME>:<PASSWORD> http://<TARGET_IP>/admin
+```
+
+<b>Look for:</b> <code>WWW-Authenticate: Basic realm=...</code> (HTTP Basic), a login form in the HTML (form/session), <code>Set-Cookie</code> after login.<br /><b>Decision:</b> Basic auth → credentials are sent in every request; try found credentials. Form login → capture the request in Burp and replay it.<br /><b>Next:</b> Step 10.<br /><b>Common mistake:</b> assuming a 401 means "no access" — it often confirms the path exists and tells you the realm name.<br /><b>Evidence:</b> the <code>WWW-Authenticate</code> header or the form's action/method.
+
+### Step 10 — Session handling
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+curl -i -sS -c cookies.txt -d 'username=<USERNAME>&password=<PASSWORD>' http://<TARGET_IP>/login
+curl -sS -b cookies.txt http://<TARGET_IP>/dashboard
+```
+
+<b>Look for:</b> a session cookie, then a successful authenticated page.<br /><b>Decision:</b> session works → browse the authenticated surface; it is usually where the vulnerability lives.<br /><b>Next:</b> Step 11.<br /><b>Common mistake:</b> guessing the form field names — copy them from the actual HTML or Burp.<br /><b>Evidence:</b> the request that authenticated and the response that proved it.
+
+## 7. JavaScript and endpoint discovery
+
+### Step 11 — Mine the JavaScript
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+curl -sS http://<TARGET_IP>/ | grep -Eo 'src="[^"]+\.js[^"]*"' | sort -u
+curl -sS http://<TARGET_IP>/js/app.js | grep -Eo '"/[a-zA-Z0-9_/.-]+"' | sort -u
+```
+
+<b>Look for:</b> API paths, hidden admin routes, API keys, feature flags.<br /><b>Decision:</b> endpoints found → request them (Step 04) and check for missing auth.<br /><b>Next:</b> Step 12.<br /><b>Common mistake:</b> only reading the visible page — SPAs put everything in the bundle.<br /><b>Evidence:</b> the endpoint list with the file it came from.
+
+### Step 12 — Crawl with a tool
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Environment Dependent
+
+```bash
+hakrawler -url http://<TARGET_IP> -depth 3 -plain
+katana -u http://<TARGET_IP> -d 3 -silent
+```
+
+<b>Prerequisites:</b> <code>hakrawler</code> (<code>go install github.com/hakluke/hakrawler@latest</code>) and <code>katana</code> (<code>go install github.com/projectdiscovery/katana/cmd/katana@latest</code>) — <b>neither is installed on the build host used for this audit</b>, hence <b>Environment Dependent</b>. The <code>curl</code> + <code>grep</code> crawl at Step 11 and <code>feroxbuster</code> at Step 14 need no extra tooling.
+
+<b>Look for:</b> URLs, parameters, forms, JS files.<br /><b>Decision:</b> new endpoints → Step 04. Nothing new → the app is small; go manual.<br /><b>Next:</b> Step 04 (new endpoints) or Step 14 (manual validation).<br /><b>Common mistake:</b> crawlers miss authenticated areas — replay with a session cookie.<br /><b>Evidence:</b> the URL list.
+
+<b>Old page content preserved:</b> the original notes had <code>hakrawler -url http://TARGET</code> and <code>katana -u http://TARGET -d 3</code>; the forms above add <code>-plain</code>/<code>-silent</code> for pipe-friendly output.
+
+## 8. Application-level manual testing
+
+### Step 13 — Broad scanner pass
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nikto -h http://<TARGET_IP>
+nikto -h https://<TARGET_IP> -ssl
+```
+
+<b>Look for:</b> dangerous files, outdated components, missing headers, exposed directories.<br /><b>Decision:</b> every hit must be manually reproduced before it goes in the report.<br /><b>Next:</b> Step 14.<br /><b>Common mistake:</b> reporting Nikto output verbatim — it is noisy and produces false positives.<br /><b>Evidence:</b> only the confirmed findings.
+
+<b>Old page content preserved:</b> the original Nikto note also used <code>nikto -h TARGET -p 8080</code> for a non-standard port; that form is still correct.
+
+### Step 14 — Manual validation checklist
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Documented
+
+- <b>Parameters</b> — try a quote (<code>'</code>) and watch for SQL errors; try <code>../../</code> for traversal.
+- <b>File upload</b> — extension filtering, content-type checks, upload directory reachable over HTTP.
+- <b>Auth logic</b> — forced browsing, IDOR (change an object id), default credentials.
+- <b>Verbose errors</b> — stack traces reveal paths, frameworks and sometimes credentials.
+- <b>Known CMS plugins</b> — enumerate versions, match against public advisories.
+
+> Only run the intrusive items above where the engagement allows it. On the exam, an unrequested destructive test can invalidate a machine.
+
+### Step 15 — Consider automated scanners carefully
+
+<b>Priority:</b> Advanced · <b>Run on:</b> Kali · <b>Status:</b> Documented<br />Automated web scanners (sqlmap with aggressive options, nuclei, wapiti) may be restricted by the current exam rules. <b>Confirm with the current official OffSec exam guide before relying on one.</b> Manual validation is always permitted and usually faster on a small app.
+
+## 9. Burp Suite handoff
+
+### Step 16 — Get traffic into Burp
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali + browser · <b>Status:</b> Documented
+
+1. Browser proxy → <code>127.0.0.1:8080</code> (or use FoxyProxy with a profile).
+2. Install Burp's CA: browse to <code>http://burp/cert</code>, import into the browser trust store.
+3. Set <b>Target → Scope</b> to the lab host so history stays readable.
+4. <code>curl</code> requests can be replayed: copy as <code>curl</code> from Burp, or send a request to <b>Repeater</b> and edit it.
+
+<b>Look for:</b> requests that differ from the browser's (hidden parameters, JSON bodies, custom headers).<br /><b>Decision:</b> an endpoint worth manipulating → Repeater. A parameter worth enumerating → Intruder (mind the rate).<br /><b>Next:</b> return to Step 14 with real requests.<br /><b>Common mistake:</b> testing without Burp's proxy in scope, then losing the request that worked.<br /><b>Evidence:</b> export the request/response pair for the report.
+
+## 10. Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| <code>curl: (60) SSL certificate problem</code> | Self-signed cert | <code>-k</code> |
+| <code>curl: (7) Failed to connect</code> | Wrong port, or service bound to [localhost](http://localhost) | Re-check the port scan; pivot through the host |
+| Redirect loop | Cookie or host mismatch | Use the hostname from <code>Location</code>, not the IP |
+| 403 on every path | WAF or IP allow-list | Slow down, change User-Agent, check for vhosts |
+| 200 on everything | Catch-all/wildcard | Filter by size (<code>-fs</code>), not status |
+| Empty body but 200 | JS-rendered SPA | Read the bundle (Step 11) |
+| Site works with IP, breaks with hostname | Missing <code>/etc/hosts</code> entry | Add it |
+| <code>nikto</code> finds nothing | Wrong scheme/port | Try <code>-ssl</code>, and the exact port |
+
+<b>Stop condition:</b> when headers, source, robots and one manual pass produce no lead, move to another service. Re-fuzzing the same wordlist is not new information.
+
+## 11. Quick workflow
+
+1. <code>nmap -sCV -p<HTTP_PORT> --script http-title,http-headers</code>.
+2. <code>whatweb -a 1</code> → <code>-a 3</code> if needed.
+3. <code>curl -i -sS -L</code> — headers, redirects, cookies.
+4. <code>robots.txt</code>, <code>sitemap.xml</code>, page source.
+5. <code>openssl s_client ... subjectAltName</code> — new hostnames.
+6. <code>ffuf</code> vhost discovery → add names to <code>/etc/hosts</code>.
+7. Auth: identify mechanism, capture a session.
+8. JS: endpoints and hidden routes.
+9. <code>nikto</code> for breadth, then manual validation.
+10. Burp for anything stateful.
+11. Directory brute force → the Directory & VHost page.
+
+## 12. Evidence to preserve
+
+- The header block per port (server, framework, cookies).
+- Certificate SAN list.
+- Every vhost/hostname you added to <code>/etc/hosts</code>.
+- The authenticated request/response pair.
+- Confirmed Nikto findings only, each with a manual reproduction.
+
+## 13. Related pages
+
+- [Nmap — Complete Command Reference](https://app.notion.com/p/4011e51238b581669e09d615530aa92a) — port discovery and <code>http-*</code> NSE
+- [DNS — Complete Command Reference](https://app.notion.com/p/4011e51238b581b49f33e6d71a304549) — resolving the hostnames found here
+- [SMB — Complete Command Reference](https://app.notion.com/p/4011e51238b581bbadcbe10d66d5ce31) — when a web root is exposed over SMB
+- [📖 OSCP Command Handbook](https://app.notion.com/p/4011e51238b581689fafe0600844e4a7) — placeholders and statuses
+- Directory and Virtual Host Enumeration — Complete Command Reference <i>(batch 5)</i>
+- Burp Suite — Complete Command Reference <i>(batch 5)</i>
+
+## 14. References
+
+- curl manual: [https://curl.se/docs/manpage.html](https://curl.se/docs/manpage.html)
+- WhatWeb: [https://github.com/urbanadventurer/WhatWeb](https://github.com/urbanadventurer/WhatWeb)
+- Nikto: [https://github.com/sullo/nikto](https://github.com/sullo/nikto)
+- OWASP Web Security Testing Guide: [https://owasp.org/www-project-web-security-testing-guide/](https://owasp.org/www-project-web-security-testing-guide/)
+
+## 15. Verification note
+
+<code>curl</code>, <code>whatweb</code>, <code>nikto</code>, <code>openssl</code> and <code>ffuf</code> flags were checked against local help output. <code>sslscan</code>, <code>testssl.sh</code>, <code>hakrawler</code> and <code>katana</code> are documented from their published usage, not executed here — hence <b>Documented</b>. No HTTP request was sent to a live target for this page.

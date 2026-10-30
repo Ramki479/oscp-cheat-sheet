@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0b0f14">
+  <meta name="description" content="Offline-ready OSCP command cheat sheet: pick a service, enter your target once, copy ready-to-run commands.">
+  <title>OSCP Cheat Sheet</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to commands</a>
+
+  <header class="topbar">
+    <div class="topbar-row">
+      <div class="brand">
+        <button class="icon-btn nav-toggle" id="navToggle" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+        <span class="brand-mark" aria-hidden="true">▚</span>
+        <span class="brand-name">OSCP-CHEAT-SHEET</span>
+      </div>
+
+      <div class="pinned" id="pinnedInputs" aria-label="Primary variables"></div>
+
+      <div class="top-actions">
+        <button class="btn ghost" id="referenceBtn" type="button" title="Open the reference pages">Reference</button>
+        <label class="search-wrap">
+          <span class="search-icon" aria-hidden="true">/</span>
+          <input id="search" type="search" placeholder="Search commands, steps, notes…" autocomplete="off" spellcheck="false" aria-label="Search commands">
+        </label>
+        <button class="btn" id="openInputs" aria-haspopup="dialog">+ Inputs</button>
+        <span class="net-pill" id="netStatus" title="Network status"><span class="dot"></span><span id="netText">…</span></span>
+      </div>
+    </div>
+  </header>
+
+  <div class="main-layout">
+    <div class="scrim" id="scrim" hidden></div>
+    <aside class="sidebar" id="sidebar" aria-label="Command pages"></aside>
+    <main class="command-panel" id="main" tabindex="-1">
+      <div class="service-bar" id="serviceBar" aria-label="Service shortcuts"></div>
+      <div class="content-container" id="content"></div>
+    </main>
+  </div>
+
+  <div class="drawer-scrim" id="drawerScrim" hidden></div>
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2 id="drawerTitle">Inputs</h2>
+        <p class="muted small">Values stay in this tab unless you opt in below.</p>
+      </div>
+      <button class="icon-btn" id="closeInputs" aria-label="Close inputs">✕</button>
+    </div>
+    <div class="drawer-body" id="drawerBody"></div>
+  </aside>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="assets/app.js"></script>
+</body>
+</html>

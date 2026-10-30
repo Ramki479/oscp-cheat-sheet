@@ -1,0 +1,315 @@
+
+> <b>Purpose:</b> take SMB from "port 445 is open" to "I have read every share this account can reach, and I know whether signing matters" — on one page.
+
+## Quick navigation
+
+- <b>A.</b> Detect SMB
+- <b>B.</b> Version, dialect and signing
+- <b>C.</b> Anonymous and guest access
+- <b>D.</b> Enumerate shares
+- <b>E.</b> Access and explore shares
+- <b>F.</b> Retrieve and inspect files
+- <b>G.</b> Authenticated enumeration
+- <b>H.</b> Investigate findings
+- <b>I.</b> Signing, relay feasibility and prerequisites
+- <b>J.</b> Troubleshooting
+- <b>K.</b> Quick workflow
+- <b>L.</b> Evidence to preserve
+- <b>M.</b> Related pages
+- <b>N.</b> References
+- <b>O.</b> Verification note
+
+<b>Priority:</b> Core / Conditional / Advanced. <b>Status:</b> <b>Lab Tested</b> = executed against an authorised lab target · <b>Simulated</b> = exercised with simulated output or fixtures · <b>Syntax Checked</b> = flags checked against the installed tool here · <b>Environment Dependent</b> = needs a specific tool, version or host configuration · <b>Documented</b> = standard technique, not run here.
+
+## Prerequisites and execution location
+
+- <b>Runs on:</b> Kali Linux.
+- <b>Needs:</b> <code>smbclient</code>, <code>smbmap</code>, <code>nxc</code> (all installed here); <code>impacket-smbclient</code> for the Impacket variant.
+- <b>Scope note:</b> null/guest sessions and share browsing are enumeration. Writing, deleting or relaying is <b>not</b> — confirm it is authorised first.
+
+## Pivoting variant — internal hosts only
+
+If the target is reachable only through a pivot, prepend <code>proxychains4</code> and keep the rest unchanged: <code>proxychains4 nxc smb <TARGET_IP> -u <USERNAME> -p <PASSWORD> --shares</code>. <code>smbclient</code> and <code>rpcclient</code> also traverse a SOCKS proxy, but every file download goes through it — copy single files instead of mirroring. If SMB stalls through SOCKS, forward the port instead: <code>ssh -L 4455:<TARGET_IP>:445 <USERNAME>@<PIVOT_HOST></code>, then <code>smbclient -p 4455 -L //127.0.0.1/</code>.
+
+## A. Detect SMB
+
+### Step 01 — Confirm SMB and grab the version
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -sCV -p139,445 <TARGET_IP>
+```
+
+<b>Look for:</b> <code>microsoft-ds</code> on 445, <code>netbios-ssn</code> on 139, and a <code>VERSION</code> string with the host/domain.<br /><b>Decision:</b> open → Step 02. 445 closed but 139 open → older stack; still worth enumerating.<br /><b>Next:</b> Step 02.<br /><b>Common mistake:</b> stopping at "445 open" without a version — the version decides whether SMBv1 or a known CVE is even relevant.<br /><b>Evidence:</b> the port table and version string.
+
+### Step 02 — NSE SMB baseline
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -p139,445 --script smb-os-discovery,smb-security-mode,smb2-security-mode,smb-enum-shares,smb-enum-users <TARGET_IP>
+```
+
+<b>Look for:</b> hostname, domain, OS build, <code>message_signing</code> state, share list, account list.<br /><b>Decision:</b> shares listed → Step 05. <code>signing: disabled</code> → read section I before acting on it.<br /><b>Next:</b> Step 05 (null session).<br /><b>Common mistake:</b> <code>smb-enum-users</code> needs a null session; an empty result usually means null sessions are off, not that there are no users.<br /><b>Evidence:</b> the OS/domain block and the share list.
+
+## B. Version, dialect and signing
+
+### Step 03 — Read the dialect and signing requirements
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -p445 --script smb2-security-mode,smb2-capabilities <TARGET_IP>
+```
+
+<b>Look for:</b> <code>SMB2/3 message signing enabled but not required</code> vs <code>required</code>.<br /><b>Decision:</b> "enabled but not required" = signing is optional → relay is <i>possible</i> in principle. "required" → relay to this host will fail.<br /><b>Next:</b> section I.<br /><b>Common mistake:</b> equating "signing not required" with "relay will work". Feasibility still depends on a coerced authentication and on the relayed identity having access.<br /><b>Evidence:</b> the exact signing line — quote it in the report.
+
+### Step 04 — Force a protocol version when negotiation fails
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+smbclient -L //<TARGET_IP>/ -N -m SMB3
+smbclient -L //<TARGET_IP>/ -N --option='client min protocol=SMB2'
+```
+
+<b>Look for:</b> a share listing instead of <code>protocol negotiation failed</code>.<br /><b>Decision:</b> SMB1-only host → <code>-m NT1</code> (lab only; SMB1 is a red flag worth reporting).<br /><b>Next:</b> Step 05.<br /><b>Common mistake:</b> assuming a negotiation failure means the host is unreachable — it usually means the dialect is mismatched.<br /><b>Evidence:</b> the dialect you had to force.
+
+## C. Anonymous and guest access
+
+### Step 05 — Null session share listing
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+smbclient -N -L //<TARGET_IP>/
+```
+
+<b>Look for:</b> a <code>Sharename Type Comment</code> table including <code>IPC$</code>, <code>C$</code>, <code>ADMIN$</code>.<br /><b>Decision:</b> <code>NT_STATUS_ACCESS_DENIED</code> → null sessions are disabled: move to credentialed enumeration. Listing works → Step 06.<br /><b>Next:</b> Step 06 (permissions) then Step 07.<br /><b>Common mistake:</b> <code>-L</code> is the list flag and is case-sensitive; <code>-l</code> does not exist.<br /><b>Evidence:</b> the share table.
+
+### Step 06 — Permission map as null/guest
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+smbmap -H <TARGET_IP> -u '' -p ''
+smbmap -H <TARGET_IP> -u guest -p ''
+```
+
+<b>Look for:</b> a <code>Disk</code>/<code>Permissions</code> table with <code>READ ONLY</code>, <code>READ, WRITE</code>, or <code>NO ACCESS</code>.<br /><b>Decision:</b> any <code>READ</code> → Step 08. <code>READ, WRITE</code> → note it; uploading is a separate, authorised decision.<br /><b>Next:</b> Step 08.<br /><b>Common mistake:</b> empty <code>-u ''</code> is a null attempt, not a guest login — try both. <code>NO ACCESS</code> on <code>C$</code> for a low-priv account is normal.<br /><b>Evidence:</b> the per-share permission table.
+
+### Step 07 — NetExec null/guest pass
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nxc smb <TARGET_IP> -u '' -p '' --shares
+```
+
+<b>Look for:</b> <code>SMB</code> banner with host/domain, then share lines with <code>READ</code>/<code>WRITE</code>.<br /><b>Decision:</b> <code>[+]</code> with guest → same path as Step 06. <code>STATUS_ACCESS_DENIED</code> → no anonymous access.<br /><b>Next:</b> Step 12 once you have credentials.<br /><b>Common mistake:</b> NetExec is noisy in logs; it is fine in a lab, but it is not a stealth tool.<br /><b>Evidence:</b> the banner is a quick source of hostname/domain strings.
+
+## D. Enumerate shares
+
+### Step 08 — Recursive directory listing
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+smbmap -H <TARGET_IP> -u <USERNAME> -p <PASSWORD> -r <SHARE_NAME> --dir-only
+```
+
+<b>Look for:</b> an indented tree — backup folders, <code>IT</code>, <code>Finance</code>, user home directories, <code>*.bak</code>, <code>*.config</code>, scripts.<br /><b>Decision:</b> a directory looks interesting → Step 09 to pull it, or Step 11 to grab one file.<br /><b>Next:</b> Step 09.<br /><b>Common mistake:</b> <b>capital </b><b><code>-R</code></b><b> is not a valid smbmap flag.</b> The recursive flag is lowercase <code>-r</code>. <code>-R</code> fails with <code>unrecognized arguments: -R</code> (verified with <code>smbmap -h</code>; some course material prints it in uppercase).<br /><b>Evidence:</b> the tree, saved with <code>-g</code> if you want a grep-able output file.
+
+### Step 09 — List a specific subdirectory
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+smbmap -H <TARGET_IP> -u <USERNAME> -p <PASSWORD> -r '<SHARE_NAME>/<SUBDIR>'
+```
+
+<b>Look for:</b> file names, sizes, dates; recently modified files are usually the intended lead.<br /><b>Decision:</b> readable files → Step 10 or 11. <code>NO ACCESS</code> on a subdirectory → try the parent or another account.<br /><b>Next:</b> Step 10 (bulk) or Step 11 (single file).<br /><b>Common mistake:</b> quoting the path — spaces in share or directory names break the argument without single quotes.<br /><b>Evidence:</b> the listing with timestamps.
+
+## E. Access and explore shares
+
+### Step 10 — Interactive smbclient session
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+smbclient -N //<TARGET_IP>/<SHARE_NAME>
+smbclient -U '<DOMAIN>/<USERNAME>%<PASSWORD>' //<TARGET_IP>/<SHARE_NAME>
+```
+
+<b>Look for:</b> <code>smb: \></code> prompt, or <code>NT_STATUS_ACCESS_DENIED</code> / <code>NT_STATUS_BAD_NETWORK_NAME</code>.<br /><b>Decision:</b> prompt appears → <code>ls</code>, <code>cd</code>, <code>recurse ON</code>, <code>prompt OFF</code>, <code>mget *</code>. Access denied → wrong account or wrong share name (case-insensitive but must exist).<br /><b>Next:</b> Step 11.<br /><b>Common mistake:</b> using <code>//<TARGET_IP>\<SHARE_NAME></code> — smbclient wants forward slashes in the UNC path.<br /><b>Evidence:</b> a transcript of the listing you relied on.
+
+### Step 11 — Non-interactive bulk download
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+mkdir -p <OUTPUT_DIR> && cd <OUTPUT_DIR>
+smbclient -N //<TARGET_IP>/<SHARE_NAME> -c 'recurse ON; prompt OFF; mget *'
+```
+
+<b>Look for:</b> <code>getting file \path\file</code> lines, then files on disk.<br /><b>Decision:</b> transfer errors on long paths → download subdirectories one at a time with <code>cd</code>/<code>mget</code>.<br /><b>Next:</b> Step 13 (inspect locally).<br /><b>Common mistake:</b> running it from your home directory — you lose track of which box the files came from. Run inside <code><OUTPUT_DIR></code>.<br /><b>Evidence:</b> the mirrored tree itself.
+
+### Step 12 — Download one specific file
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+smbmap -H <TARGET_IP> -u <USERNAME> -p <PASSWORD> --download '<SHARE_NAME>/<PATH>/<FILE>'
+smbclient -U '<DOMAIN>/<USERNAME>%<PASSWORD>' //<TARGET_IP>/<SHARE_NAME> -c 'get <FILE> <OUTPUT_FILE>'
+```
+
+<b>Look for:</b> the file appearing locally at the target path, or a <code>file not found</code> error.<br /><b>Decision:</b> success → Step 13. Failure on a path that was listed → quote the path exactly; spaces need quoting.<br /><b>Next:</b> Step 13.<br /><b>Common mistake:</b> downloading to a name that already exists — you silently overwrite earlier evidence.<br /><b>Evidence:</b> the file plus its source path.
+
+### Step 13 — Inspect what you pulled
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+find <OUTPUT_DIR> -type f -exec file {} +
+grep -RIn -E 'pass|pwd|secret|token|key|connectionString' <OUTPUT_DIR>
+```
+
+<b>Look for:</b> config files, <code>.kdbx</code>, <code>.pfx</code>, scripts with hardcoded credentials, database backups, <code>unattend.xml</code>, <code>.ssh</code> directories.<br /><b>Decision:</b> credentials found → validate them carefully (Step 14) and record where they came from. Nothing found → continue enumeration; not every share is the path.<br /><b>Next:</b> Step 14.<br /><b>Common mistake:</b> grepping only for "password" — also try <code>pw</code>, <code>sa</code>, <code>uid=</code>, <code>user id=</code>, and base64-looking strings.<br /><b>Evidence:</b> the file path plus the exact line containing the credential.
+
+## F. Authenticated enumeration
+
+### Step 14 — Validate credentials and enumerate the domain in one pass
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nxc smb <TARGET_IP> -u <USERNAME> -p <PASSWORD> -d <DOMAIN> --shares --users --groups --loggedon-users --pass-pol
+```
+
+<b>Look for:</b> <code>[+]</code> auth success, share permissions, user list with <code>badpwdcount</code>, group memberships, active sessions, lockout policy.<br /><b>Decision:</b> <code>(Pwn3d!)</code> → local admin, move to secrets dumping (Advanced). Valid but no admin → harvest more shares and BloodHound data.<br /><b>Next:</b> Step 15.<br /><b>Common mistake:</b> running <code>--users</code> before reading <code>--pass-pol</code> — you may be two attempts from locking out every account.<br /><b>Evidence:</b> the auth line (host + domain + user), the share table, the policy.
+
+### Step 15 — Re-enumerate every share with the new identity
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+smbmap -H <TARGET_IP> -u <USERNAME> -p <PASSWORD> -d <DOMAIN>
+```
+
+<b>Look for:</b> shares that were <code>NO ACCESS</code> before and are now readable — this is the single most common "new credential" win.<br /><b>Decision:</b> new access → back to Step 09/11 with that share.<br /><b>Next:</b> Step 09.<br /><b>Common mistake:</b> assuming your first enumeration was complete. Permissions are per-account; every new credential means re-running the basics.<br /><b>Evidence:</b> the before/after permission difference.
+
+### Step 16 — RPC enumeration
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+rpcclient -U "" -N <TARGET_IP> -c "enumdomusers;enumdomgroups;querydominfo"
+rpcclient -U '<DOMAIN>/<USERNAME>%<PASSWORD>' <TARGET_IP> -c "enumdomusers"
+```
+
+<b>Look for:</b> <code>user:[name] rid:[0x...]</code>, group lists, domain info.<br /><b>Decision:</b> users found → build a username list (never brute force before reading the password policy).<br /><b>Next:</b> password policy, then careful spraying.<br /><b>Common mistake:</b> RID cycling (<code>impacket-lookupsid</code>) is noisy and often unnecessary once you have one credential.<br /><b>Evidence:</b> the user/group list with RIDs.
+
+## G. Investigate findings
+
+### Step 17 — Follow usernames
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Documented
+
+- Collect every <code>sAMAccountName</code> into <code><USERLIST></code>.
+- Check the password policy before any spraying (<code>--pass-pol</code>).
+- Reuse found credentials across SMB, WinRM, RDP and MSSQL — one password often opens two services.
+- A username with no password is still useful: it feeds Kerberos user enumeration and AS-REP roasting.
+
+### Step 18 — Follow files and backups
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Documented
+
+- <code>*.bak</code>, <code>*.old</code>, <code>*.zip</code>, <code>*.7z</code>, <code>*.vhd</code>, <code>*.kdbx</code> → extract and grep.
+- PowerShell scripts and <code>.bat</code> files often contain service-account credentials.
+- <code>web.config</code>/<code>appsettings.json</code> → connection strings with SQL credentials.
+- <code>unattend.xml</code>, <code>sysprep.inf</code> → local admin passwords (sometimes base64).
+
+### Step 19 — Follow configuration and scripts
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Documented
+
+- A script that maps a drive or calls <code>net use</code> reveals credentials and share names.
+- A scheduled task definition reveals a service account.
+- Note the file path: it is evidence and often the answer to "where did this credential come from?".
+
+## H. Signing, relay feasibility and prerequisites
+
+### Step 20 — Build a relay candidate list
+
+<b>Priority:</b> Advanced · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nxc smb <TARGET_IP>/24 --gen-relay-list <OUTPUT_FILE>
+```
+
+<b>Look for:</b> hosts where signing is not required, one IP per line.<br /><b>Decision:</b> domain controllers never appear (they require signing). A non-empty list is a <i>candidate</i> list, nothing more.<br /><b>Next:</b> only with explicit authorisation: Responder + <code>ntlmrelayx</code>.<br /><b>Common mistake:</b> treating this output as proof of exploitability. Relay needs (1) a host that does not require signing, (2) a coerced or captured authentication, (3) an identity with access to the target.<br /><b>Evidence:</b> the candidate list plus the signing evidence from Step 03.
+
+### Step 21 — SMBv1 / MS17-010 check
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -p445 --script smb-vuln-ms17-010 <TARGET_IP>
+```
+
+<b>Look for:</b> <code>VULNERABLE</code> with the CVE-2017-0143 family.<br /><b>Decision:</b> vulnerable → confirm patch level and prerequisites before any attempt; this exploit can crash the host.<br /><b>Next:</b> validate in a snapshot if the exam allows it.<br /><b>Common mistake:</b> running EternalBlue against a fragile exam VM and losing the box.<br /><b>Evidence:</b> the script output, and the OS build that supports the claim.
+
+## I. Troubleshooting
+
+| Error | Meaning | Fix |
+| --- | --- | --- |
+| <code>NT_STATUS_LOGON_FAILURE</code> | Bad credentials, or wrong domain | Check <code>-d <DOMAIN></code>; try <code>--local-auth</code> in NetExec |
+| <code>NT_STATUS_ACCESS_DENIED</code> | Authenticated but no rights to that share | Try another share or account; check <code>smbmap</code> permissions |
+| <code>NT_STATUS_BAD_NETWORK_NAME</code> | Share name does not exist | Re-list shares; watch spaces and <code>$</code> suffixes |
+| <code>NT_STATUS_IO_TIMEOUT</code> | 445 filtered | Try 139 (<code>-p 139</code>), or confirm the host is up |
+| <code>protocol negotiation failed</code> | Dialect mismatch | <code>-m SMB2</code> / <code>-m SMB3</code> / <code>-m NT1</code> |
+| <code>session setup failed: NT_STATUS_MORE_PROCESSING_REQUIRED</code> | Kerberos clock skew or unsupported auth | Sync time (<code>sudo ntpdate <DC></code> / <code>timedatectl</code>), or use NTLM |
+| <code>smbclient: command not found</code> | Package missing | <code>sudo apt install smbclient smbmap</code> |
+| Works with IP, fails with hostname | Name resolution | Add the entry to <code>/etc/hosts</code> |
+
+<b>Stop condition:</b> if null, guest and one credential all fail and the share list is empty, SMB is probably not the entry point — move to another service and come back only with a new credential.
+
+## J. Quick workflow
+
+1. <code>nmap -sCV -p139,445</code> — confirm and version.
+2. NSE baseline (Step 02) — OS, domain, shares, users.
+3. <code>smbclient -N -L //<TARGET_IP>/</code> — null session.
+4. <code>smbmap -H <TARGET_IP> -u '' -p ''</code> — permissions.
+5. <code>smbmap -r <SHARE_NAME> --dir-only</code> — map the tree (lowercase <code>-r</code>).
+6. Download and inspect (Steps 11-13).
+7. With credentials: <code>nxc smb ... --shares --users --groups --pass-pol</code>.
+8. Re-run Steps 5-6 with the new identity.
+9. Record signing status and whether relay is <i>actually</i> feasible.
+
+## K. Evidence to preserve
+
+- The port/version table and the SMB signing line.
+- The share table <b>before and after</b> each new credential.
+- File paths (not just contents) of anything containing credentials.
+- The exact command used to retrieve each file, so the path is reproducible.
+
+## L. Related pages
+
+- [Nmap — Complete Command Reference](https://app.notion.com/p/4011e51238b581669e09d615530aa92a) — port discovery and NSE basics
+- [HTTP & HTTPS — Complete Command Reference](https://app.notion.com/p/4011e51238b581649211c0c5db9c94f8) — if SMB reveals a web root
+- [📖 OSCP Command Handbook](https://app.notion.com/p/4011e51238b581689fafe0600844e4a7) — placeholders and status definitions
+- Impacket — Complete Command Reference <i>(batch 4)</i> — <code>psexec</code>, <code>secretsdump</code>, <code>smbclient</code>
+- NetExec — Complete Command Reference <i>(batch 4)</i>
+- Active Directory — Complete Command Reference <i>(batch 3)</i>
+
+## M. References
+
+- Samba <code>smbclient</code> manual: [https://www.samba.org/samba/docs/current/man-html/smbclient.1.html](https://www.samba.org/samba/docs/current/man-html/smbclient.1.html)
+- smbmap usage: [https://github.com/ShawnDEvans/smbmap](https://github.com/ShawnDEvans/smbmap)
+- NetExec wiki: [https://www.netexec.wiki/](https://www.netexec.wiki/)
+- MS17-010 advisory: [https://learn.microsoft.com/en-us/security-updates/securitybulletins/2017/ms17-010](https://learn.microsoft.com/en-us/security-updates/securitybulletins/2017/ms17-010)
+
+## N. Verification note
+
+Flags were checked against <code>smbclient --help</code>, <code>smbmap -h</code> and <code>nxc smb --help</code> on this machine. The <code>smbmap -R</code> defect was reproduced (<code>unrecognized arguments: -R x</code>), which is why this page uses lowercase <code>-r</code> throughout. No SMB session was opened against a live host for this page, so nothing here is <b>Lab Tested</b>.

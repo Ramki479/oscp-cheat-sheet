@@ -1,0 +1,128 @@
+
+> <b>Source:</b> OffSec <b>OSCP+ Exam Guide</b>, [help.offsec.com](http://help.offsec.com) article 360040165632 — guide last updated <b>21 October 2026</b>, checked <b>22 October 2026</b>. If your exam is later, re-read the guide before relying on anything here.
+
+> <b>Everything below is a summary, not a substitute.</b> Rules change. When this page and the official guide disagree, the official guide wins — and you are responsible for knowing it.
+
+## Exam shape
+
+| Item | Value |
+| --- | --- |
+| Exam time | <b>23 hours 45 minutes</b> |
+| Report upload window | <b>24 hours</b> after the exam ends |
+| Machines | 3 standalone + 1 AD set of 3 machines |
+| Points | standalone 20 each (10 initial + 10 privesc) = 60 · AD set 10 + 10 + 20 = 40 |
+| Maximum raw points | <b>100</b> |
+| Proctoring | All exams proctored |
+| Connection | Kali Linux over OpenVPN, using the supplied <code>.ovpn</code> file |
+
+<b>AD set:</b> you are <b>given a username and password</b>, simulating a breach. You are not expected to break in from nothing.
+
+<b>Point allocation:</b> machines are graded in the order you document them; each has specific objectives listed in the exam control panel.
+
+<b>Pass mark:</b> this version of the guide states the 100-point maximum and that <b>scaled scoring</b> applies to exams starting on or after <b>1 December 2026, 08:00 GMT</b> (see the OSCP+ Scaled Scoring FAQ). It does not restate a raw pass threshold — <b>confirm the current pass rule in the guide/FAQ before your exam</b> rather than relying on the old 70/100 figure.
+
+## Proof rules — where most points are lost
+
+- Each target has at least one proof file: <code>local.txt</code> (unprivileged) and <code>proof.txt</code> (root/Administrator).
+- You must submit the file <b>contents in the control panel before the exam ends</b>.
+- You must also show the contents <b>in a screenshot</b>, together with the <b>target IP</b> from <code>ipconfig</code>, <code>ifconfig</code> or <code>ip addr</code>.
+- Read the file <b>from its original location</b>, using <code>cat</code> or <code>type</code>, in an <b>interactive shell</b>.
+- <b>A web shell, or any other retrieval method, scores zero for that machine.</b>
+- Windows full points require a shell as <b>SYSTEM</b>, <b>Administrator</b>, or a user with Administrator privileges. Linux full points require <b>root</b>.
+
+## Report rules
+
+- A professional report covering every attack: all steps, commands issued, and console output — detailed enough for a competent reader to replicate it.
+- <b>Once submitted, the submission is final.</b> Missing screenshots cannot be added later.
+- <b>Unmodified exploit:</b> give the URL only; do not paste pages of third-party code.
+- <b>Modified exploit:</b> include the modified code, the original URL, the shellcode-generation command (if any), highlighted changes, and why you changed them.
+- Suggested templates: the official Word or OpenOffice report template (or your own, if structured and professional).
+
+## Tool restrictions
+
+### Not permitted
+
+- <b>Spoofing</b> — IP, ARP, DNS, NBNS, etc.
+- <b>Commercial tools or services</b> — Metasploit Pro, Burp Pro, etc.
+- <b>Automatic exploitation tools</b> — db\_autopwn, browser\_autopwn, <b>SQLmap</b>, SQLninja, etc.
+- <b>Mass vulnerability scanners</b> — Nessus, NeXpose, OpenVAS, Canvas, Core Impact, SAINT, etc.
+- <b>AI chatbots</b> — OffSec KAI, ChatGPT, YouChat, DeepSeek, Gemini, etc. Using LLMs is treated as receiving third-party help.
+- Features inside otherwise-allowed tools that perform any of the above.
+
+### Permitted (examples named in the guide)
+
+- <b>Nmap</b> (including its scripting engine), <b>Nikto</b>, <b>Burp Free</b>, <b>DirBuster</b>, and similar manual tools.
+- Tools with built-in AI features (e.g. Notion, Google AI Overview) do <b>not</b> need to be disabled — but you may not use the AI features to solve exam tasks.
+- Discord may be used to <b>search for information</b>, but never to request or receive help.
+
+> You are responsible for knowing what a tool does under the hood. "A tool did it automatically" is not a defence.
+
+## Metasploit restrictions
+
+- Metasploit modules (<b>Auxiliary, Exploit, Post</b>) or <b>Meterpreter</b> may be used against <b>one</b> target machine only — your choice, locked in from the first use.
+- You may <b>not</b> use <code>check</code> (or modules) against several machines to pick a target. Testing multiple machines with Metasploit selects your one machine by that act.
+- If the attempt on your chosen machine <b>fails</b>, you may <b>not</b> move Metasploit to a second machine.
+- Metasploit <b>cannot be used for pivoting</b> (that would touch more than one target).
+- <code>multi/handler</code> and <code>msfvenom</code> may be used against <b>all</b> machines — but a Meterpreter payload still counts as Meterpreter and is limited to one machine.
+- The same limits apply to Armitage, Cobalt Strike, Metasploit Community Edition, and similar interfaces.
+
+## Reverts
+
+- <b>24 reverts</b>, and the limit can be <b>reset once</b> during the exam.
+- All machines start freshly reverted.
+- Click <b>once</b> per attempt and wait — a revert discards all your changes on that machine.
+
+## Scoring disqualifiers
+
+No points for a machine if you:
+
+- used a restricted tool;
+- used Metasploit Auxiliary/Exploit/Post or Meterpreter on more than one machine;
+- failed to provide <code>local.txt</code>/<code>proof.txt</code> in <b>both</b> the control panel and an interactive-shell screenshot;
+- did not document the work.
+
+## Submission mechanics
+
+| Step | Requirement |
+| --- | --- |
+| Format | PDF only, all scripts/PoCs as text inside the PDF |
+| File name | <code>OSCP-OS-XXXXX-Exam-Report.pdf</code> (case-sensitive; <code>OS-XXXXX</code> is your OSID) |
+| Archive | <code>.7z</code>, <b>no password</b>, same base name |
+| Size | ≤ <b>200 MB</b> |
+| Upload | [https://upload.offsec.com](https://upload.offsec.com) within 24 hours of exam end |
+| Verify | compare the MD5 shown after upload with <code>md5sum</code> of your local file |
+| Results | email within <b>10 business days</b> |
+
+```bash
+sudo 7z a OSCP-OS-XXXXX-Exam-Report.7z OSCP-OS-XXXXX-Exam-Report.pdf
+md5sum OSCP-OS-XXXXX-Exam-Report.7z
+```
+
+## Before your exam — re-confirm these
+
+- ☐ Current exam guide version and its date
+- ☐ Pass rule (raw vs scaled scoring) and effective date
+- ☐ Tool restriction list, including the AI policy
+- ☐ Metasploit limits and whether <code>msfvenom</code>/handler wording changed
+- ☐ Report template and file-naming rules
+- ☐ Upload URL and size limit
+
+> Anything you cannot confirm from the official guide on the day should be treated as <b>"confirm with current official guide"</b> — not assumed.
+
+## Related pages
+
+- [OSCP Attack Workflow — Start Here](https://app.notion.com/p/4011e51238b581c5ad53c7704de0ebc5)
+- [OSCP Exam Checklist & Evidence Collection](https://app.notion.com/p/4011e51238b58192a726f4738738085a)
+- [OSCP Machine Notes — Template](https://app.notion.com/p/4011e51238b5811cb117f8335df3a46f)
+- <mention url="https://app.notion.com/p/4011e51238b581689fafe0600844e4a7">📖 OSCP Command Handbook</mention>
+
+## Reference
+
+- OSCP+ Exam Guide: [https://help.offsec.com/hc/en-us/articles/360040165632-OSCP-Exam-Guide](https://help.offsec.com/hc/en-us/articles/360040165632-OSCP-Exam-Guide)
+- AI Usage Policy in OffSec Exams: [https://help.offsec.com/hc/en-us/articles/35549468971156](https://help.offsec.com/hc/en-us/articles/35549468971156)
+- OSCP+ Exam FAQ: [https://help.offsec.com/hc/en-us/articles/4412170923924](https://help.offsec.com/hc/en-us/articles/4412170923924)
+- Scaled Scoring FAQ: [https://help.offsec.com/hc/en-us/articles/54589877508884](https://help.offsec.com/hc/en-us/articles/54589877508884)
+
+## Verification note
+
+All exam-specific statements above were read from the official OSCP+ Exam Guide on 22 October 2026 (guide updated 21 October 2026). No exam was taken to produce this page. Rules that the guide states only by reference — chiefly the pass threshold under scaled scoring — are marked for confirmation rather than asserted.

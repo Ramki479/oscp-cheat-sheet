@@ -1,0 +1,204 @@
+
+> <b>Purpose:</b> the exam is scored on <b>flags plus evidence</b>, not on shells. Build the workspace, capture proof in a form a grader accepts, and keep a timeline — before exam day, so it is habit rather than panic.
+
+## Scoring context
+
+- Three standalone machines (60 points) plus one Active Directory set of three machines (40 points), <b>23 hours 45 minutes</b>, then <b>24 hours</b> to upload the report.
+- AI chatbots and similar assistants are <b>prohibited</b> during the exam.
+- Scoring is scaled from <b>1 December 2026</b>; the current guide no longer restates a raw pass mark — <b>confirm with the current official guide</b>.
+- Full rules: <b>OSCP Exam Rules & Tool Restrictions</b>. No page here overrides the official guide.
+
+## A. Workspace
+
+### Step 01 — Create the workspace
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+mkdir -p ~/exam/{scans,loot,screens,notes}
+ls -la ~/exam
+```
+
+<b>Look for:</b> four directories, created once, at the start.<br /><b>Decision:</b> every artefact goes into one of them — scans by host, loot by host, screenshots by sequence, notes by host.<br /><b>Next:</b> Step 02.<br /><b>Common mistake:</b> saving evidence to <code>~/Downloads</code> or <code>/tmp</code>. Files there get lost on reboot or collided between hosts.<br /><b>Evidence:</b> the directory listing.
+
+### Step 02 — Naming discipline
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+mkdir -p ~/exam/scans/<TARGET_IP> ~/exam/loot/<TARGET_IP>
+# scans: ~/exam/scans/<TARGET_IP>/nmap_full.txt
+# loot:  ~/exam/loot/<TARGET_IP>/<SERVICE>_<WHAT>.txt
+# shots: ~/exam/screens/<TARGET_IP>_<STEP>_<WHAT>.png
+```
+
+<b>Look for:</b> a path you can reconstruct a week later.<br /><b>Decision:</b> host-first naming (<code><IP>_<step>_<what></code>) sorts correctly and survives copy/paste into the report.<br /><b>Next:</b> Step 03.<br /><b>Common mistake:</b> <code>screenshot1.png</code>. Twenty of those and you cannot tell which host or which privilege level it proves.<br /><b>Evidence:</b> the naming scheme in use.
+
+## B. Capture proof
+
+### Step 03 — Linux host proof
+
+<b>Priority:</b> Core · <b>Run on:</b> Linux target · <b>Status:</b> Syntax Checked
+
+```bash
+whoami; hostname; ip a; cat /etc/hostname
+cat /root/local.txt
+cat /root/proof.txt
+```
+
+<b>Look for:</b> the flag contents, plus hostname/IP visible <b>in the same terminal</b>.<br /><b>Decision:</b> <code>local.txt</code> proves user, <code>proof.txt</code> proves root — capture both at the moment you obtain them.<br /><b>Next:</b> screenshot immediately (Step 06).<br /><b>Common mistake:</b> capturing the flag, then closing the shell, then having no proof of <b>which</b> host it came from.<br /><b>Evidence:</b> one screen showing the command, the flag, and <code>ip a</code>/<code>hostname</code>.
+
+### Step 04 — Windows host proof
+
+<b>Priority:</b> Core · <b>Run on:</b> Windows target · <b>Status:</b> Syntax Checked
+
+```shen
+whoami; hostname; ipconfig
+type C:\Users\<USERNAME>\Desktop\local.txt
+type C:\Users\Administrator\Desktop\proof.txt
+```
+
+<b>Look for:</b> <code>nt authority\system</code> or the Administrator context, the hostname, the IPv4 address, and the flag.<br /><b>Decision:</b> Administrator vs SYSTEM matters for the write-up — state which account you used.<br /><b>Next:</b> screenshot (Step 06).<br /><b>Common mistake:</b> running <code>type</code> in a different session from <code>whoami</code>. The grader must see them together.<br /><b>Evidence:</b> the combined output in one screenshot.
+
+### Step 05 — Read local and proof files
+
+<b>Priority:</b> Core · <b>Run on:</b> either · <b>Status:</b> Syntax Checked
+
+```bash
+cat /root/proof.txt 2>/dev/null
+```
+
+```cmd
+type C:\Users\Administrator\Desktop\proof.txt 2>nul
+```
+
+<b>Look for:</b> the correct file for the privilege level you reached.<br /><b>Decision:</b> <code>local.txt</code> without <code>proof.txt</code> means the box is half-done — do not move on and forget it.<br /><b>Next:</b> continue escalation, then recapture.<br /><b>Common mistake:</b> copying the flag into notes without a screenshot. Notes are supporting evidence; the screenshot is the proof.<br /><b>Evidence:</b> the file path and the flag value.
+
+### Step 06 — Screenshot with a naming scheme
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali or VM host · <b>Status:</b> Documented
+
+```bash
+scrot -s ~/exam/screens/$(date +%H%M%S)_proof.png
+# alternative, if scrot is unavailable: use the hypervisor/VM screenshot tool
+```
+
+<b>Look for:</b> a PNG that includes the flag <b>and</b> the host identity.<br /><b>Decision:</b> <code>scrot</code> is not installed on this host — install it on your own exam VM, or use the VM console's screenshot function. Test the chosen method <b>before</b> exam day.<br /><b>Next:</b> Step 11 (hash it).<br /><b>Common mistake:</b> cropping the screenshot so the hostname/IP disappears. Never crop the terminal header.<br /><b>Evidence:</b> the PNG file itself, named with host and purpose.
+
+### Step 07 — The one-image rule
+
+<b>Priority:</b> Core · <b>Run on:</b> either · <b>Status:</b> Documented
+
+A grader should be able to look at <b>one image</b> and see: the flag, the account, and the host. If a single terminal cannot show all three (e.g. a GUI-only path), take two consecutive screenshots and label them <code><IP>_proof_a</code> and <code><IP>_proof_b</code>.
+
+<b>Look for:</b> no ambiguity about which machine the flag belongs to.<br /><b>Decision:</b> you cannot prove host identity → the flag is worth nothing in a dispute. Recapture.<br /><b>Next:</b> hash and file it.<br /><b>Common mistake:</b> proving root access with a screenshot of <code>id</code> only. That shows a privilege level, not a completed box.<br /><b>Evidence:</b> the paired images, sequentially numbered.
+
+## C. Timeline and notes
+
+### Step 08 — Timestamp your activity
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+date -u; date +%H:%M:%S >> ~/exam/notes/timeline.txt
+```
+
+<b>Look for:</b> a monotonic log of what you did and when.<br /><b>Decision:</b> useful when the report needs "initial access at …", and when you must explain a gap.<br /><b>Next:</b> append a one-line entry at each major milestone.<br /><b>Common mistake:</b> writing the timeline at the end from memory. It will be wrong, and it reads like it.<br /><b>Evidence:</b> <code>~/exam/notes/timeline.txt</code>.
+
+### Step 09 — Per-machine notes
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+Use the <b>OSCP Machine Notes — Template</b> page for every host: IP, hostname, open ports, credentials found, exploitation path, privilege escalation, flags, and screenshot filenames.
+
+<b>Look for:</b> enough detail that you could redo the box from the notes alone.<br /><b>Decision:</b> if a step produced a credential or a shell, it belongs in the notes <b>and</b> in the final report.<br /><b>Next:</b> Step 10.<br /><b>Common mistake:</b> notes that record only the final command. The report needs the path, including failed branches that explain your choices.<br /><b>Evidence:</b> one note file per host.
+
+### Step 10 — Time budget
+
+<b>Priority:</b> Core · <b>Run on:</b> — · <b>Status:</b> Documented
+
+A workable split for 23h45m: roughly 12 hours for the three standalone machines, 6-7 hours for the AD set, and the remaining time for reporting and re-checks. Treat these as targets, not rules — the official guide is authoritative on timing.
+
+<b>Look for:</b> a box that has consumed its budget without a foothold.<br /><b>Decision:</b> park it, take the easy points elsewhere, come back with fresh eyes.<br /><b>Next:</b> move to the next target and log the switch in the timeline.<br /><b>Common mistake:</b> sinking 8 hours into one machine while three others remain untouched.<br /><b>Evidence:</b> the budget vs actual, in the timeline.
+
+## D. Integrity and recovery
+
+### Step 11 — Hash the evidence
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+md5sum ~/exam/screens/*.png ~/exam/loot/* 2>/dev/null
+sha256sum ~/exam/screens/*.png
+```
+
+<b>Look for:</b> a hash list you can re-verify before upload.<br /><b>Decision:</b> hashes differ after copying → the copy corrupted (rare); re-copy before submitting.<br /><b>Next:</b> keep the hash file with the report.<br /><b>Common mistake:</b> hashing an empty glob (no files matched) and calling it verified. Check the file count first.<br /><b>Evidence:</b> the hash list and the matching files.
+
+### Step 12 — Revert a broken target
+
+<b>Priority:</b> Conditional · <b>Run on:</b> exam console · <b>Status:</b> Documented
+
+If an exploit crashes a service or you lock yourself out, revert the machine to the <b>exam-provided snapshot</b> before re-attacking. Re-read the exam guide for the exact revert procedure and any scoring implications.
+
+<b>Look for:</b> the documented revert control in the exam environment — not a guess at <code>vmrun</code> or a hypervisor CLI.<br /><b>Decision:</b> the box is unstable or credentials are bricked → revert, then redo only the steps needed to regain your position.<br /><b>Next:</b> re-capture proof if the revert lost it.<br /><b>Common mistake:</b> reverting after you already captured the flag and losing the shell state — capture and hash proof <b>before</b> any revert.<br /><b>Evidence:</b> the timeline entry for the revert and the reason.
+
+## E. Report skeleton
+
+| Section | Contents |
+| --- | --- |
+| Summary | Machines compromised, flags, and the AD set status |
+| Per host | IP, hostname, ports, initial access, privesc, flags, screenshots |
+| AD set | Each host plus the domain controller; the path taken |
+| Evidence index | Screenshot filenames and hashes |
+| Appendix | Tool output that supports a claim (nmap, secretsdump redacted) |
+
+<b>Rule:</b> every claim in the report points to a screenshot or a command output. If it is not evidenced, do not claim it.
+
+## F. Decision tree
+
+| Situation | Do this | Do <b>not</b> |
+| --- | --- | --- |
+| Starting the exam | Workspace + naming (Steps 01-02) | Start scanning with no structure |
+| Got user | Capture <code>local.txt</code>  • host identity | Wait until root |
+| Got root/SYSTEM | Capture <code>proof.txt</code> in the same shell | Close the shell first |
+| Screenshot has no host identity | Recapture (Step 07) | Crop it later |
+| Box crashes | Revert snapshot (Step 12) | Improvise a repair |
+| Behind schedule | Park the box, log it (Step 10) | Sink the remaining time |
+| Writing the report | Follow the skeleton (Section E) | Paste raw terminal output |
+
+## G. Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| Screenshot tool missing | Not installed on Kali | Install before exam day, or use the VM console |
+| Flag screenshot rejected in review | No host identity | Recapture with <code>ip a</code>/<code>ipconfig</code> visible |
+| <code>md5sum: no such file</code> | Glob matched nothing | Check the directory, then re-hash |
+| Notes unusable | Written after the fact | Use the per-machine template live |
+| Report missing a step | Relied on memory | Timeline + notes (Steps 08-09) |
+| Revert lost the shell | Reverted after capture | Capture and hash first |
+
+## H. Pre-submission checklist
+
+- Every flag has a screenshot showing the flag, account, and host.
+- Every machine has a note file and a report section.
+- Screenshots are named by host and purpose, and hashed.
+- The AD set documents all three hosts and the domain controller.
+- No claim lacks a command output.
+- Report uploaded within the 24-hour window.
+
+## I. Related pages
+
+- <mention url="https://app.notion.com/p/4011e51238b5812ab0e1f4ed40981967" /> — authoritative rules
+- <mention url="https://app.notion.com/p/4011e51238b58192a726f4738738085a" /> — condensed checklist
+- <mention url="https://app.notion.com/p/4011e51238b5811cb117f8335df3a46f" /> — per-host notes
+- OSCP Attack Workflow — Start Here
+- <mention url="https://app.notion.com/p/4011e51238b58177854fcfe83c31ef5d" /> — where <code>proof.txt</code> comes from
+
+## J. References
+
+- OffSec OSCP+ exam guide: [https://www.offsec.com/courses/pen-200/](https://www.offsec.com/courses/pen-200/)
+- OffSec reporting guidance: [https://help.offsec.com/](https://help.offsec.com/)
+
+## K. Verification note
+
+The workspace, proof-reading, timestamp and hashing commands are standard shell usage and are <b>Syntax Checked</b>. <code>scrot</code> is <b>not installed</b> on this host, so the screenshot step is <b>Documented</b> and must be rehearsed on your own exam VM. The snapshot-revert step is <b>Documented</b> because the procedure belongs to the exam environment, not to a local tool. Exam timings and scoring must be confirmed against the current official guide.

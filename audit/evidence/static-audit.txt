@@ -1,0 +1,247 @@
+# STEP INVENTORY
+
+## nmap (25 steps / 24 cmds)
+  § nmap-scope-and-target :: Scope and target [2]
+  § nmap-host-discovery :: Host discovery [1]
+  § nmap-port-discovery :: Port discovery [4]
+  § nmap-service-and-version-detection :: Service and version detection [2]
+  § nmap-udp-scanning :: UDP scanning [2]
+  § nmap-os-detection :: OS detection [1]
+  § nmap-service-specific-nse :: Service-specific NSE [8]
+  § nmap-output-and-evidence :: Output and evidence [2]
+  § nmap-performance-and-timing :: Performance and timing [2]
+  § nmap-through-a-pivot :: Through a pivot [1]
+
+## smb (21 steps / 18 cmds)
+  § smb-detect-smb :: Detect SMB [2]
+  § smb-version-dialect-and-signing :: Version, dialect and signing [2]
+  § smb-anonymous-and-guest-access :: Anonymous and guest access [3]
+  § smb-enumerate-shares :: Enumerate shares [2]
+  § smb-access-and-explore-shares :: Access and explore shares [4]
+  § smb-authenticated-enumeration :: Authenticated enumeration [3]
+  § smb-investigate-findings :: Investigate findings [3]
+  § smb-signing-relay-feasibility-and-prerequisites :: Signing, relay feasibility and prerequisites [2]
+
+## ftp (12 steps / 11 cmds)
+  § ftp-detect-ftp :: Detect FTP [2]
+  § ftp-enumerate-the-daemon :: Enumerate the daemon [1]
+  § ftp-anonymous-access :: Anonymous access [2]
+  § ftp-log-in-and-list :: Log in and list [1]
+  § ftp-download-and-mirror :: Download and mirror [2]
+  § ftp-inspect-what-you-pulled :: Inspect what you pulled [1]
+  § ftp-version-and-configuration-investigation :: Version and configuration investigation [1]
+  § ftp-write-access-conditional :: Write access (conditional) [1]
+  § ftp-authorised-exploitation-paths :: Authorised exploitation paths [1]
+
+## dns (9 steps / 9 cmds)
+  § dns-detect-dns :: Detect DNS [1]
+  § dns-basic-record-lookups :: Basic record lookups [2]
+  § dns-reverse-lookups :: Reverse lookups [1]
+  § dns-zone-transfer :: Zone transfer [1]
+  § dns-subdomain-enumeration :: Subdomain enumeration [2]
+  § dns-hostname-handling :: Hostname handling [1]
+  § dns-active-directory-srv-records :: Active Directory SRV records [1]
+
+## http (16 steps / 13 cmds)
+  § http-detect-and-fingerprint :: Detect and fingerprint [2]
+  § http-headers-status-codes-redirects-cookies :: Headers, status codes, redirects, cookies [2]
+  § http-robots-txt-sitemap-and-source :: robots.txt, sitemap and source [1]
+  § http-tls-and-certificates :: TLS and certificates [2]
+  § http-virtual-host-discovery :: Virtual-host discovery [1]
+  § http-authentication-mechanisms :: Authentication mechanisms [2]
+  § http-javascript-and-endpoint-discovery :: JavaScript and endpoint discovery [2]
+  § http-application-level-manual-testing :: Application-level manual testing [3]
+  § http-burp-suite-handoff :: Burp Suite handoff [1]
+
+## ssh (12 steps / 13 cmds)
+  § ssh-detection-and-version-identification :: Detection and version identification [1]
+  § ssh-authentication-behavior :: Authentication behavior [1]
+  § ssh-algorithm-enumeration :: Algorithm enumeration [1]
+  § ssh-verbose-connection-diagnostics :: Verbose connection diagnostics [1]
+  § ssh-check-already-available-credentials :: Check already available credentials [1]
+  § ssh-validate-key-format-and-fingerprint :: Validate key format and fingerprint [2]
+  § ssh-prepare-private-key-permissions :: Prepare private-key permissions [1]
+  § ssh-determine-whether-a-passphrase-is-required :: Determine whether a passphrase is required [1]
+  § ssh-conditional-passphrase-recovery :: Conditional passphrase recovery [1]
+  § ssh-connect-using-the-key :: Connect using the key [1]
+  § ssh-legacy-algorithm-compatibility :: Legacy algorithm compatibility [1]
+
+## other-services (12 steps / 12 cmds)
+  § other-services-nfs :: NFS [2]
+  § other-services-smtp :: SMTP [2]
+  § other-services-snmp :: SNMP [2]
+  § other-services-databases :: Databases [2]
+  § other-services-remote-access :: Remote access [2]
+  § other-services-ipmi :: IPMI [1]
+  § other-services-exposed-debug-ports :: Exposed debug ports [1]
+
+## active-directory (25 steps / 23 cmds)
+  § active-directory-confirm-the-domain :: Confirm the domain [3]
+  § active-directory-enumerate-with-the-provided-credential :: Enumerate with the provided credential [5]
+  § active-directory-credential-attacks :: Credential attacks [5]
+  § active-directory-read-bloodhound :: Read BloodHound [1]
+  § active-directory-acl-abuse :: ACL abuse [2]
+  § active-directory-delegation :: Delegation [3]
+  § active-directory-adcs :: ADCS [2]
+  § active-directory-lateral-movement :: Lateral movement [2]
+  § active-directory-domain-compromise :: Domain compromise [2]
+
+## bleeding-edge (23 steps / 31 cmds)
+  § bleeding-edge-nopac-samaccountname-spoofing :: NoPac — SamAccountName spoofing [5]
+  § bleeding-edge-printnightmare-spooler-rce :: PrintNightmare — spooler RCE [7]
+  § bleeding-edge-petitpotam-coercion-to-ad-cs :: PetitPotam — coercion to AD CS [11]
+
+## bloodhound (14 steps / 13 cmds)
+  § bloodhound-collection :: Collection [4]
+  § bloodhound-querying :: Querying [3]
+  § bloodhound-exploiting-the-edges :: Exploiting the edges [7]
+
+## post-exploitation (20 steps / 20 cmds)
+  § post-exploitation-netexec-validate-and-enumerate :: NetExec: validate and enumerate [12]
+  § post-exploitation-impacket-execution-and-dumping :: Impacket: execution and dumping [8]
+
+## passwords (12 steps / 12 cmds)
+  § passwords-identify-and-organise :: Identify and organise [2]
+  § passwords-crack-the-common-types :: Crack the common types [5]
+  § passwords-improve-the-attack :: Improve the attack [3]
+  § passwords-use-a-password-without-cracking :: Use a password without cracking [2]
+
+## linux-privesc (21 steps / 21 cmds)
+  § linux-privesc-triage-in-60-seconds :: Triage in 60 seconds [3]
+  § linux-privesc-suid-and-sgid :: SUID and SGID [3]
+  § linux-privesc-capabilities :: Capabilities [2]
+  § linux-privesc-cron-and-timers :: Cron and timers [2]
+  § linux-privesc-writable-system-files :: Writable system files [4]
+  § linux-privesc-nfs-credentials-and-services :: NFS, credentials, and services [4]
+  § linux-privesc-kernel-exploits :: Kernel exploits [1]
+  § linux-privesc-automated-enumeration-after-manual :: Automated enumeration (after manual) [2]
+
+## windows-privesc (19 steps / 19 cmds)
+  § windows-privesc-identity-and-privileges :: Identity and privileges [3]
+  § windows-privesc-services :: Services [4]
+  § windows-privesc-scheduled-tasks :: Scheduled tasks [1]
+  § windows-privesc-install-policy :: Install policy [2]
+  § windows-privesc-credentials-on-the-box :: Credentials on the box [2]
+  § windows-privesc-token-impersonation :: Token impersonation [2]
+  § windows-privesc-registry-and-permissions :: Registry and permissions [1]
+  § windows-privesc-network-and-listening-services :: Network and listening services [1]
+  § windows-privesc-automated-enumeration :: Automated enumeration [2]
+  § windows-privesc-kernel-exploits :: Kernel exploits [1]
+
+## directory-vhost (17 steps / 17 cmds)
+  § directory-vhost-setup-and-baseline :: Setup and baseline [2]
+  § directory-vhost-directory-enumeration :: Directory enumeration [10]
+  § directory-vhost-virtual-host-and-subdomain-enumeration :: Virtual host and subdomain enumeration [5]
+
+## shells (15 steps / 15 cmds)
+  § shells-stabilise-the-shell :: Stabilise the shell [3]
+  § shells-serve-files-from-kali :: Serve files from Kali [3]
+  § shells-linux-target :: Linux target [3]
+  § shells-windows-target :: Windows target [5]
+  § shells-verify-integrity :: Verify integrity [1]
+
+## tunneling (11 steps / 11 cmds)
+  § tunneling-ssh-tunnels :: SSH tunnels [4]
+  § tunneling-chisel-no-ssh-required :: Chisel (no SSH required) [2]
+  § tunneling-without-ssh :: Without SSH [3]
+  § tunneling-chains-and-verification :: Chains and verification [2]
+
+## exploit-research (14 steps / 12 cmds)
+  § exploit-research-find-the-exploit :: Find the exploit [4]
+  § exploit-research-generate-a-payload :: Generate a payload [5]
+  § exploit-research-catch-the-shell :: Catch the shell [3]
+  § exploit-research-compile-and-adapt :: Compile and adapt [2]
+
+## attack-workflow (0 steps / 0 cmds)
+
+## machine-notes (2 steps / 0 cmds)
+  § machine-notes-foothold :: Foothold [2]
+
+## exam-rules (0 steps / 0 cmds)
+
+## exam-checklist (0 steps / 0 cmds)
+
+## exam-execution (12 steps / 8 cmds)
+  § exam-execution-workspace :: Workspace [2]
+  § exam-execution-capture-proof :: Capture proof [5]
+  § exam-execution-timeline-and-notes :: Timeline and notes [3]
+  § exam-execution-integrity-and-recovery :: Integrity and recovery [2]
+
+## troubleshooting (9 steps / 7 cmds)
+  § troubleshooting-connectivity-and-routing :: Connectivity and routing [2]
+  § troubleshooting-ports-and-listeners :: Ports and listeners [2]
+  § troubleshooting-application-layer :: Application layer [1]
+  § troubleshooting-ground-truth :: Ground truth [2]
+  § troubleshooting-proxy-and-pivot-checks :: Proxy and pivot checks [2]
+
+# ANOMALIES
+OUTPUT-TOKEN bleeding-edge-11 bleeding-edge: SNIP
+UNREG-FIELD post-exploitation-17 lookFor: <LM>
+UNREG-FIELD post-exploitation-17 lookFor: <NT>
+UNREG-FIELD windows-privesc-08 next: <TASK>
+UNREG-FIELD windows-privesc-11 mistake: <B64>
+UNREG-FIELD directory-vhost-13 mistake: <IP>
+UNREG-FIELD exploit-research-03 next: <MODULE>
+UNREG-FIELD exam-execution-02 decision: <IP>
+UNREG-NOTE exam-execution-07: <IP>
+UNREG-NOTE exam-execution-07: <IP>
+DUP-CMD nmap/nmap-06 | nmap/nmap-21 :: sudo nmap -sCV -p <TARGET_PORT> -oA <OUTPUT_FILE> <TARGET_IP>
+DUP-CMD nmap/nmap-15 | ftp/ftp-02 :: nmap -p21 --script ftp-anon,ftp-syst,ftp-vsftpd-backdoor <TARGET_IP>
+DUP-CMD other-services/other-services-10 | post-exploitation/post-exploitation-20 :: evil-winrm -i <TARGET_IP> -u <USERNAME> -p <PASSWORD>
+DUP-CMD bleeding-edge/bleeding-edge-17 | bleeding-edge/bleeding-edge-23 :: klist
+RUNON nmap: {"kali":25}
+RUNON smb: {"kali":21}
+RUNON ftp: {"kali":11,"either":1}
+RUNON dns: {"kali":9}
+RUNON http: {"kali":16}
+RUNON ssh: {"kali":12}
+RUNON other-services: {"kali":11,"target":1}
+RUNON active-directory: {"kali":23,"unspecified":1,"target":1}
+RUNON bleeding-edge: {"kali":20,"either":1,"windows":2}
+RUNON bloodhound: {"kali":12,"windows":1,"either":1}
+RUNON post-exploitation: {"kali":20}
+RUNON passwords: {"kali":12}
+RUNON linux-privesc: {"target":20,"either":1}
+RUNON windows-privesc: {"target":19}
+RUNON directory-vhost: {"kali":17}
+RUNON shells: {"target":1,"either":7,"kali":4,"windows":3}
+RUNON tunneling: {"kali":8,"either":1,"pivot":2}
+RUNON exploit-research: {"kali":14}
+RUNON machine-notes: {"unspecified":2}
+RUNON exam-execution: {"kali":6,"either":3,"windows":1,"other":2}
+RUNON troubleshooting: {"kali":8,"either":1}
+MULTILINE bleeding-edge/bleeding-edge-23 lines=2
+DANGER NO-WARNING active-directory/active-directory-08 :: # with a credential
+DANGER NO-WARNING linux-privesc/linux-privesc-09 :: cat /etc/crontab
+DANGER NO-WARNING windows-privesc/windows-privesc-08 :: schtasks /query /fo LIST /v
+STATUS nmap: {"Syntax Checked":24,"Documented — Untested":1}
+STATUS smb: {"Syntax Checked":18,"Documented — Untested":3}
+STATUS ftp: {"Syntax Checked":9,"Documented — Untested":3}
+STATUS dns: {"Syntax Checked":9}
+STATUS http: {"Syntax Checked":11,"Documented — Untested":5}
+STATUS ssh: {"Syntax Checked":10,"Documented — Untested":2}
+STATUS other-services: {"Syntax Checked":11,"Documented — Untested":1}
+STATUS active-directory: {"Syntax Checked":18,"Documented — Untested":7}
+STATUS bleeding-edge: {"Documented — Untested":23}
+STATUS bloodhound: {"Syntax Checked":10,"Documented — Untested":4}
+STATUS post-exploitation: {"Syntax Checked":18,"Documented — Untested":2}
+STATUS passwords: {"Syntax Checked":12}
+STATUS linux-privesc: {"Syntax Checked":15,"Documented — Untested":6}
+STATUS windows-privesc: {"Syntax Checked":10,"Documented — Untested":9}
+STATUS directory-vhost: {"Syntax Checked":15,"Documented — Untested":2}
+STATUS shells: {"Syntax Checked":14,"Documented — Untested":1}
+STATUS tunneling: {"Syntax Checked":9,"Documented — Untested":2}
+STATUS exploit-research: {"Syntax Checked":12,"Documented — Untested":2}
+STATUS attack-workflow: {}
+STATUS machine-notes: {"Documented — Untested":2}
+STATUS exam-rules: {}
+STATUS exam-checklist: {}
+STATUS exam-execution: {"Syntax Checked":8,"Documented — Untested":4}
+STATUS troubleshooting: {"Syntax Checked":9}
+MULTI-CMD ssh/ssh-02 n=2 "Ask without authenticating" langs=bash/bash
+MULTI-CMD bleeding-edge/bleeding-edge-01 n=2 "Install Impacket and clone the exploit" langs=bash/bash
+MULTI-CMD bleeding-edge/bleeding-edge-06 n=2 "Install cube0x0's exploit and Impacket fork" langs=bash/bash
+MULTI-CMD bleeding-edge/bleeding-edge-15 n=3 "Alternative: other coercion triggers" langs=powershell/powershell/powershell
+MULTI-CMD bleeding-edge/bleeding-edge-17 n=2 "Load the TGT and confirm it" langs=bash/bash
+MULTI-CMD bleeding-edge/bleeding-edge-18 n=2 "DCSync with the DC's ticket" langs=bash/bash
+MULTI-CMD bleeding-edge/bleeding-edge-23 n=3 "Alternative: Windows path — DCSync krbtgt with Mimikatz" langs=powershell/powershell/powershell

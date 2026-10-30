@@ -1,0 +1,209 @@
+
+> <b>Purpose:</b> confirm SSH, work out which authentication is actually possible, and handle keys and passphrases correctly — forwarding lives on its own page.
+
+## Quick navigation
+
+- <b>1.</b> Detect SSH
+- <b>2.</b> Authentication-method discovery
+- <b>3.</b> Credential testing (careful)
+- <b>4.</b> Key identification and inspection
+- <b>5.</b> Key permissions
+- <b>6.</b> Passphrase-protected keys
+- <b>7.</b> Weak or legacy algorithms
+- <b>8.</b> Troubleshooting
+- <b>9.</b> Quick workflow
+- <b>10.</b> Evidence to preserve
+- <b>11.</b> Related pages
+- <b>12.</b> References
+- <b>13.</b> Verification note
+
+<b>Priority:</b> Core / Conditional / Advanced. <b>Status:</b> Syntax Checked · Documented — Untested.
+
+## Prerequisites and execution location
+
+- <b>Runs on:</b> Kali Linux.
+- <b>Needs:</b> <code>ssh</code>, <code>ssh-keygen</code>, <code>ssh2john</code>; <code>nmap</code> with the <code>ssh-*</code> scripts.
+- <b>Out of scope here:</b> <code>-L</code>, <code>-R</code>, <code>-D</code> and proxying → <b>SSH Tunneling & Port Forwarding</b> <i>(batch 6)</i>.
+
+## Pivoting variant — internal hosts only
+
+<code>proxychains4 ssh <USERNAME>@<TARGET_IP></code> works but is slow and fragile. Prefer ProxyJump: <code>ssh -J <USERNAME>@<PIVOT_HOST> <USERNAME>@<TARGET_IP></code> — one session, no SOCKS layer, and the resulting shell can still forward ports with <code>-L</code>.
+
+## 1. Detect SSH
+
+### Step 01 — Confirm the service and version
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -sCV -p22 --script ssh-auth-methods,ssh2-enum-algos <TARGET_IP>
+```
+
+<b>Look for:</b> <code>OpenSSH <version></code>, the accepted auth methods, and the KEX/host-key algorithms.<br /><b>Decision:</b> <code>publickey</code> only → hunt for keys (Step 04). <code>password</code> allowed → Step 03, carefully.<br /><b>Next:</b> Step 02.<br /><b>Common mistake:</b> assuming an unusual port means "not SSH" — check the banner on every unknown port.<br /><b>Evidence:</b> the version and the auth-methods line.
+
+## 2. Authentication-method discovery
+
+### Step 02 — Ask without authenticating
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ssh -o PreferredAuthentications=none -o StrictHostKeyChecking=no <USERNAME>@<TARGET_IP>
+```
+
+<b>Look for:</b> <code>Permission denied (publickey,password).</code> — the list is the answer.<br /><b>Decision:</b> the methods shown decide your next move; nothing is attempted yet.<br /><b>Next:</b> Step 03 or Step 04.<br /><b>Common mistake:</b> using <code>ssh -v</code> for this and reading a wall of debug output — the <code>PreferredAuthentications=none</code> form answers the question in one line.<br /><b>Evidence:</b> the exact method list.
+
+### Step 03 — Verbose connection trace
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ssh -v <USERNAME>@<TARGET_IP>
+```
+
+<b>Look for:</b> <code>Authentications that can continue:</code>, server host key type, and where the handshake stops.<br /><b>Decision:</b> handshake fails before auth → algorithm or network problem (Step 07/08). Auth list shown → normal.<br /><b>Next:</b> Step 03 (credentials) or Step 04 (keys).<br /><b>Common mistake:</b> leaving it running — it will prompt for a password; Ctrl-C.<br /><b>Evidence:</b> the algorithm and auth-method lines.
+
+## 3. Credential testing (careful)
+
+### Step 04 — One deliberate attempt, not a brute force
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Documented — Untested
+
+```bash
+sshpass -p '<PASSWORD>' ssh -o StrictHostKeyChecking=no <USERNAME>@<TARGET_IP>
+```
+
+<b>Look for:</b> a shell, or <code>Permission denied</code>.<br /><b>Decision:</b> denied → stop. Do not loop over a wordlist: SSH is slow and noisy, and repeated failures may be logged or blocked.<br /><b>Next:</b> find a better credential source (shares, configs, notes).<br /><b>Common mistake:</b> spraying SSH before checking SMB/HTTP for credentials; the password is usually already on the box.<br /><b>Evidence:</b> the success banner and host key fingerprint.
+
+## 4. Key identification and inspection
+
+### Step 05 — Identify a found key
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+file <KEY_FILE>
+head -1 <KEY_FILE>
+ssh-keygen -y -f <KEY_FILE>
+```
+
+<b>Look for:</b> <code>OpenSSH private key</code> vs <code>PEM RSA private key</code>; <code>ssh-keygen -y</code> printing the public key (and prompting for a passphrase if encrypted).<br /><b>Decision:</b> passphrase prompt → Step 07. Public key prints → the key is usable as-is.<br /><b>Next:</b> Step 06.<br /><b>Common mistake:</b> a <code>-----BEGIN OPENSSH PRIVATE KEY-----</code> key in an old tool that only understands PEM — convert with <code>ssh-keygen -p -m PEM -f <KEY_FILE></code>.<br /><b>Evidence:</b> the key type and fingerprint (<code>ssh-keygen -lf <KEY_FILE>.pub</code>).
+
+### Step 06 — Check matching public keys
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ssh-keygen -lf <KEY_FILE>          # fingerprint
+ssh-keygen -lf ~/.ssh/authorized_keys
+```
+
+<b>Look for:</b> the same fingerprint on both sides.<br /><b>Decision:</b> fingerprint matches a user's <code>authorized_keys</code> (found in a share or web root) → that key logs in as that user.<br /><b>Next:</b> <code>ssh -i <KEY_FILE> <USERNAME>@<TARGET_IP></code>.<br /><b>Common mistake:</b> comparing key <i>text</i> by eye; fingerprints are the reliable comparison.<br /><b>Evidence:</b> the fingerprint pair.
+
+## 5. Key permissions
+
+### Step 07 — Fix permissions before SSH refuses the key
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+chmod 600 <KEY_FILE>
+```
+
+<b>Look for:</b> no output; the <code>Permissions 0644 ... are too open</code> warning disappears.<br /><b>Decision:</b> warning persists → check ownership too (<code>ls -l</code>).<br /><b>Next:</b> <code>ssh -i <KEY_FILE> <USERNAME>@<TARGET_IP></code>.<br /><b>Common mistake:</b> editing the key inside a mounted share — copy it to <code><OUTPUT_DIR></code> first, then <code>chmod</code>.<br /><b>Evidence:</b> <code>ls -l <KEY_FILE></code> showing mode <code>-rw-------</code>.
+
+## 6. Passphrase-protected keys
+
+### Step 08 — Detect the passphrase
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ssh-keygen -y -f <KEY_FILE>
+```
+
+<b>Look for:</b> <code>Enter passphrase:</code> → encrypted; a printed <code>ssh-rsa AAAA...</code> → not encrypted.<br /><b>Decision:</b> encrypted → Step 09.<br /><b>Next:</b> Step 09.<br /><b>Common mistake:</b> assuming an encrypted key is unusable — it is crackable if the passphrase is weak.<br /><b>Evidence:</b> whether a passphrase is required.
+
+### Step 09 — Crack the passphrase
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ssh2john <KEY_FILE> > <OUTPUT_FILE>
+john --wordlist=<WORDLIST> <OUTPUT_FILE>
+john --show <OUTPUT_FILE>
+```
+
+<b>Look for:</b> <code><KEY_FILE>:<passphrase></code>.<br /><b>Decision:</b> cracked → <code>ssh -i <KEY_FILE></code> and enter it. Not cracked → try a targeted wordlist; do not burn the clock.<br /><b>Next:</b> log in, then enumerate.<br /><b>Common mistake:</b> <code>ssh2john</code> needs the file path, not piped stdin in older versions — and the output must go to a file for <code>john</code>.<br /><b>Evidence:</b> the cracked passphrase (store it in the machine notes, not in a shared page).
+
+## 7. Weak or legacy algorithms
+
+### Step 10 — Read the algorithm list
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -p22 --script ssh2-enum-algos <TARGET_IP>
+```
+
+<b>Look for:</b> <code>diffie-hellman-group1-sha1</code>, <code>ssh-rsa</code>, <code>arcfour</code>, <code>3des-cbc</code>.<br /><b>Decision:</b> legacy algorithms are a <b>hardening finding</b>, not an authentication bypass. They may matter for an old client or a MITM scenario, nothing more.<br /><b>Next:</b> Step 11 only if you actually need to connect with a legacy client.<br /><b>Common mistake:</b> reporting "weak SSH algorithms" as if it grants access. It does not.<br /><b>Evidence:</b> the algorithm list, labelled as a configuration observation.
+
+### Step 11 — Connect with legacy algorithms when required
+
+<b>Priority:</b> Advanced · <b>Run on:</b> Kali · <b>Status:</b> Documented — Untested
+
+```bash
+ssh -oKexAlgorithms=+diffie-hellman-group1-sha1 -oHostKeyAlgorithms=+ssh-rsa -oPubkeyAcceptedAlgorithms=+ssh-rsa <USERNAME>@<TARGET_IP>
+```
+
+<b>Look for:</b> a successful handshake where the default client refused.<br /><b>Decision:</b> still fails → the server may require an even older cipher (<code>-c 3des-cbc</code>).<br /><b>Next:</b> use the session normally.<br /><b>Common mistake:</b> leaving these options in your shell history for later targets — they weaken every future connection.<br /><b>Evidence:</b> the forced options, so the result is reproducible.
+
+## 8. Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| <code>Connection refused</code> | Nothing listening, or wrong port | Confirm the port scan |
+| <code>Connection timed out</code> | Firewall | Try through a pivot |
+| <code>Permission denied (publickey)</code> | No matching key | Find the key, or another user |
+| <code>Too many authentication failures</code> | Agent offering every key | <code>-o IdentitiesOnly=yes -i <KEY_FILE></code> |
+| <code>REMOTE HOST IDENTIFICATION HAS CHANGED</code> | Rebuilt host, new key | <code>ssh-keygen -R <TARGET_IP></code> |
+| <code>no matching host key type found</code> | Client too new for server | Step 11 |
+| <code>Permissions 0644 ... are too open</code> | Key mode | <code>chmod 600</code> |
+| <code>Load key ... invalid format</code> | PEM vs OpenSSH | <code>ssh-keygen -p -m PEM -f <KEY_FILE></code> |
+
+<b>Stop condition:</b> no credentials, no keys, and password auth denied → SSH is not the entry point. Re-check shares and web roots for a key before giving up.
+
+## 9. Quick workflow
+
+1. <code>nmap -sCV -p22 --script ssh-auth-methods,ssh2-enum-algos</code>.
+2. <code>ssh -o PreferredAuthentications=none <USERNAME>@<TARGET_IP></code> — methods.
+3. Search shares/web roots for keys and credentials.
+4. <code>file</code> + <code>ssh-keygen -y -f</code> the key.
+5. <code>chmod 600</code>.
+6. Encrypted → <code>ssh2john</code> + <code>john</code>.
+7. <code>ssh -i <KEY_FILE> <USERNAME>@<TARGET_IP></code>.
+8. Enumerate from the new shell; then go to the privesc page.
+
+## 10. Evidence to preserve
+
+- The auth-method line.
+- Key fingerprints (both sides) and the <code>ls -l</code> permission proof.
+- The exact <code>ssh</code> command that worked.
+- Host key fingerprint, if the report asks you to prove the host identity.
+
+## 11. Related pages
+
+- [Nmap — Complete Command Reference](https://app.notion.com/p/4011e51238b581669e09d615530aa92a) — port discovery
+- [📖 OSCP Command Handbook](https://app.notion.com/p/4011e51238b581689fafe0600844e4a7) — placeholders and statuses
+- SSH Tunneling & Port Forwarding — Complete Command Reference <i>(batch 6)</i>
+- Linux Privilege Escalation — Complete Command Reference <i>(batch 4)</i>
+
+## 12. References
+
+- <code>ssh_config</code> manual: [https://man.openbsd.org/ssh\_config](https://man.openbsd.org/ssh_config)
+- <code>ssh-keygen</code> manual: [https://man.openbsd.org/ssh-keygen](https://man.openbsd.org/ssh-keygen)
+- OpenSSH release notes (algorithm deprecations): [https://www.openssh.com/releasenotes.html](https://www.openssh.com/releasenotes.html)
+
+## 13. Verification note
+
+Flags were checked against the local <code>ssh</code>, <code>ssh-keygen</code>, <code>ssh2john</code> and <code>nmap</code> help output. No SSH session was opened against a live host for this page; nothing is <b>Lab Tested</b>. The weak-algorithm section is explicitly a configuration finding, not an access path.

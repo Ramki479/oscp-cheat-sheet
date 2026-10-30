@@ -1,0 +1,293 @@
+
+> <b>Purpose:</b> confirm FTP, test anonymous access, pull everything readable, and know exactly what to check next — without confusing FTP, FTPS and SFTP.
+
+## Quick navigation
+
+- <b>1.</b> Detect FTP
+- <b>2.</b> Enumerate the daemon
+- <b>3.</b> Anonymous access
+- <b>4.</b> Log in and list
+- <b>5.</b> Download and mirror
+- <b>6.</b> Inspect what you pulled
+- <b>7.</b> Version and configuration investigation
+- <b>8.</b> Write access (conditional)
+- <b>9.</b> Authorised exploitation paths
+- <b>10.</b> Troubleshooting
+- <b>11.</b> Quick workflow
+- <b>12.</b> Evidence to preserve
+- <b>13.</b> Related pages
+- <b>14.</b> References
+- <b>15.</b> Verification note
+
+<b>Priority:</b> Core / Conditional / Advanced. <b>Status:</b> <b>Lab Tested</b> = executed against an authorised lab target · <b>Simulated</b> = exercised with simulated output or fixtures · <b>Syntax Checked</b> = flags checked against the installed tool here · <b>Environment Dependent</b> = needs a specific tool, version or host configuration · <b>Documented</b> = standard technique, not run here.
+
+## Prerequisites and execution location
+
+- <b>Runs on:</b> Kali Linux.
+- <b>Needs:</b> <code>ftp</code> or <code>lftp</code>; <code>wget</code>/<code>curl</code>; <code>nmap</code>.
+- <b>Protocol distinction — do not mix these up:</b>
+  - <b>FTP</b> — port 21 control, plaintext, separate data connection (active/passive).
+  - <b>FTPS</b> — FTP over TLS; still port 21 with <code>AUTH TLS</code>, or implicit on 990.
+  - <b>SFTP</b> — SSH subsystem on port 22. It is <b>not</b> FTP and none of the FTP commands below apply. Use [SSH — Complete Command Reference](https://app.notion.com/p/4011e51238b58123b446cc627bc02913).
+
+## Pivoting variant — internal hosts only
+
+<code>proxychains4 ftp -p <TARGET_IP></code> carries the control channel, but FTP needs a <b>second</b> data connection, which SOCKS handles badly. Prefer an explicit forward: <code>ssh -L 2121:<TARGET_IP>:21 <USERNAME>@<PIVOT_HOST></code>, then <code>ftp -p 127.0.0.1 2121</code> (passive). If active mode is required, the forward must be reversed — <code>ssh -R</code> — because the target connects back to you.
+
+## 1. Detect FTP
+
+### Step 01 — Confirm the service and version
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -sCV -p21 <TARGET_IP>
+```
+
+<b>Look for:</b> <code>21/tcp open ftp</code> plus product/version, and whether <code>ftp-syst</code>/<code>ftp-anon</code> ran as part of <code>-sC</code>.<br /><b>Decision:</b> open → Step 02. Version like <code>vsftpd 3.0.3</code> is common and <b>not</b> automatically vulnerable.<br /><b>Next:</b> Step 02.<br /><b>Common mistake:</b> assuming the banner version is exploitable — check the distribution's patches first.<br /><b>Evidence:</b> the banner and version.
+
+### Step 02 — FTP NSE checks
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -p21 --script ftp-anon,ftp-syst,ftp-vsftpd-backdoor <TARGET_IP>
+```
+
+
+```bash
+# manual anonymous check — 230 = granted, 530 = denied, no 230/530 line = read the full trace
+curl -sS --max-time 10 -v ftp://anonymous:anonymous@<TARGET_IP>/ 2>&1 | grep -E '^< (220|230|530)'
+```
+
+<table header-row="true">
+<colgroup>
+<col width="240" />
+<col width="240" />
+<col width="240" />
+</colgroup>
+<tr>
+<td>
+Result
+</td>
+<td>
+What it means
+</td>
+<td>
+Next action
+</td>
+</tr>
+<tr>
+<td>
+<code>Anonymous FTP login allowed</code>
+</td>
+<td>
+Anonymous access confirmed
+</td>
+<td>
+Step 03 for the banner, then Step 04 to list files
+</td>
+</tr>
+<tr>
+<td>
+<code>Anonymous FTP login denied</code>, or the manual check prints <code>530</code>
+</td>
+<td>
+Anonymous access is really refused
+</td>
+<td>
+Stop anonymous attempts — go to Step 06 with credentials
+</td>
+</tr>
+<tr>
+<td>
+No <code>ftp-anon</code> line, and the manual check prints no <code>230</code>/<code>530</code>
+</td>
+<td>
+Inconclusive: the scanner gave you nothing either way
+</td>
+<td>
+Investigate the trace (timeout, TLS-only, proxy); only a refused login closes this path
+</td>
+</tr>
+</table>
+
+<b>Look for:</b> <code>Anonymous FTP login allowed</code>, <code>ftp-syst</code> server type/features, backdoor response.<br /><b>Failure path:</b> no <code>ftp-anon</code> line at all <b>does not prove</b> anonymous is off. The script prints nothing on some servers and builds — during this site's audit a local pyftpdlib server granted anonymous login while <code>ftp-anon</code> returned nothing. Treat an empty result as <b>inconclusive</b>, run the manual check above, and only then decide.<br /><b>Decision:</b> read the result three ways (table above). <code>Anonymous FTP login allowed</code> → Step 03, then log in at Step 04. Backdoor positive → Step 09 (validate first; most 2.3.4 builds are clean). Neither line printed → manual check, then Step 03/04 or Step 06.<br /><b>Next:</b> Step 03 when anonymous works, Step 06 when it is denied.<br /><b>Common mistake:</b> <code>ftp-bounce</code> is obsolete on modern servers, and an empty script result is not a negative — confirm it by hand before you write the service off.<br /><b>Evidence:</b> the anonymous result and the manual check that confirmed it — it is usually the whole path.
+
+## 2. Enumerate the daemon
+
+### Step 03 — Read the banner directly
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nc -nv <TARGET_IP> 21
+```
+
+<b>Look for:</b> <code>220 (vsFTPd 3.0.3)</code> or similar; sometimes a hostname or internal domain.<br /><b>Decision:</b> banner reveals a hostname → add it to <code>/etc/hosts</code> and check DNS/vhosts.<br /><b>Next:</b> Step 04.<br /><b>Common mistake:</b> leaving the connection open — type <code>QUIT</code> or Ctrl-C.<br /><b>Evidence:</b> the banner line, especially any hostname.
+
+## 3. Anonymous access
+
+### Step 04 — Try the anonymous account
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ftp -p <TARGET_IP>
+```
+
+<b>Look for:</b> <code>230 Login successful</code> (or <code>230 Anonymous access granted</code>).<br /><b>Decision:</b> success → Step 06. <code>530</code> → anonymous disabled, move on unless you have credentials.<br /><b>Next:</b> Step 06.<br /><b>Common mistake:</b> <code>-p</code> means <b>passive mode</b>, not "port". The login is <code>anonymous</code> with any password (conventionally an email).<br /><b>Evidence:</b> the login response and directory listing.
+
+### Step 05 — Anonymous access with lftp
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Environment Dependent
+
+```bash
+lftp -u anonymous,anonymous <TARGET_IP>
+```
+
+<b>Prerequisites:</b> <code>lftp</code> is an optional extra (<code>sudo apt install lftp</code>) and is <b>not</b> installed on the build host used for this audit — that is why this step is <b>Environment Dependent</b>. Step 04 (<code>ftp</code>) and Step 07 (<code>wget</code>) do the same job with tools that ship by default.<br /><b>Look for:</b> <code>lftp :~></code> prompt.<br /><b>Decision:</b> works → <code>ls</code>, then <code>mirror</code> (Step 07). Fails or the command is missing → fall back to <code>ftp</code> or <code>wget</code>.<br /><b>Next:</b> Step 07.<br /><b>Common mistake:</b> lftp is not always installed (<code>sudo apt install lftp</code>); it is optional.<br /><b>Evidence:</b> same as Step 04.
+
+## 4. Log in and list
+
+### Step 06 — List and navigate
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ftp -p <TARGET_IP>
+# at the ftp> prompt
+ls -la
+binary
+```
+
+<b>Look for:</b> directories named <code>backup</code>, <code>public</code>, <code>upload</code>, <code>www</code>, <code>conf</code>; dotfiles; <code>*.zip</code>, <code>*.sql</code>, <code>*.bak</code>.<br /><b>Decision:</b> <code>www</code> or <code>public_html</code> present → the FTP root may be web-served: check [HTTP & HTTPS — Complete Command Reference](https://app.notion.com/p/4011e51238b581649211c0c5db9c94f8) on 80/443.<br /><b>Next:</b> Step 07.<br /><b>Common mistake:</b> forgetting <code>binary</code> before downloading archives — ASCII mode corrupts zips and binaries.<br /><b>Evidence:</b> the recursive listing.
+
+## 5. Download and mirror
+
+### Step 07 — Mirror everything
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+mkdir -p <OUTPUT_DIR> && cd <OUTPUT_DIR>
+wget -m ftp://anonymous:anonymous@<TARGET_IP>/
+```
+
+<b>Look for:</b> a mirrored tree and a transfer log ending without errors.<br /><b>Decision:</b> passive mode fails (<code>425</code>) → add <code>--no-passive-ftp</code> (forces active; only if your host is reachable from the target). Credentials → <code>ftp://<USERNAME>:<PASSWORD>@<TARGET_IP>/</code>.<br /><b>Next:</b> Step 09.<br /><b>Common mistake:</b> credentials in the URL end up in shell history and process listings — acceptable in a lab, not in real engagements.<br /><b>Evidence:</b> the mirrored files with timestamps.
+
+### Step 08 — Single file over an interactive session
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ftp -p <TARGET_IP>
+# at the ftp> prompt
+binary
+get <FILE> <OUTPUT_FILE>
+```
+
+<b>Look for:</b> <code>226 Transfer complete</code>.<br /><b>Decision:</b> <code>550 Failed to open file</code> → wrong path or no read permission.<br /><b>Next:</b> Step 09.<br /><b>Common mistake:</b> <code>get file</code> without an output path writes to the current directory and can overwrite evidence.<br /><b>Evidence:</b> the file and the exact command.
+
+## 6. Inspect what you pulled
+
+### Step 09 — Triage the contents
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+find . -type f -exec file {} +
+grep -RIn -E 'pass|pwd|secret|token|key|user' .
+```
+
+<b>Look for:</b> config files, SQL dumps, SSH keys, scripts with credentials, <code>.bash_history</code>, <code>*.bak</code>.<br /><b>Decision:</b> credentials → validate elsewhere (SSH/SMB/HTTP). Source code → look for upload endpoints and hardcoded paths.<br /><b>Next:</b> Step 10, or the service the credentials belong to.<br /><b>Common mistake:</b> only reading filenames — the interesting data is usually inside <code>.conf</code>, <code>.env</code>, <code>*.sql</code>, <code>*.php</code>.<br /><b>Evidence:</b> file path plus the line containing the finding.
+
+## 7. Version and configuration investigation
+
+### Step 10 — Check the version against known issues
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+searchsploit vsftpd 3.0.3
+searchsploit proftpd
+```
+
+<b>Look for:</b> matching exploits and their required conditions.<br /><b>Decision:</b> candidate found → read it fully and confirm the exact build before running anything.<br /><b>Next:</b> Step 11 only with authorisation.<br /><b>Common mistake:</b> the vsftpd 2.3.4 backdoor (CVE-2011-2523) only affects the specific trojanised source release — most distributions shipped a clean 2.3.4.<br /><b>Evidence:</b> the version string plus the exploit's prerequisites.
+
+## 8. Write access (conditional)
+
+### Step 11 — Test write permission with a harmless file
+
+<b>Priority:</b> Advanced · <b>Run on:</b> Kali (against an authorised lab target) · <b>Status:</b> Documented
+
+```bash
+echo test > /tmp/test.txt
+ftp -p <TARGET_IP>
+# at the ftp> prompt
+put /tmp/test.txt
+```
+
+<b>Look for:</b> <code>226 Transfer complete</code>, or <code>550 Permission denied</code>.<br /><b>Decision:</b> writable <b>and</b> the directory maps to a web root → an upload path may exist; confirm the web path before uploading anything else. Writable but not web-served → limited value.<br /><b>Next:</b> [HTTP & HTTPS — Complete Command Reference](https://app.notion.com/p/4011e51238b581649211c0c5db9c94f8) if web-served.<br /><b>Common mistake:</b> overwriting or deleting existing files. Upload a new, uniquely named file and remove it afterwards.<br /><b>Evidence:</b> the upload confirmation and the resulting URL/path.
+
+## 9. Authorised exploitation paths
+
+### Step 12 — Prerequisites before attempting anything
+
+<b>Priority:</b> Advanced · <b>Run on:</b> Kali · <b>Status:</b> Documented
+
+- <b>Backdoored vsftpd 2.3.4</b> — only the trojanised release; trigger opens a shell on 6200. Confirm the build first; this is not a generic 2.3.4 exploit.
+- <b>Anonymous write + web root</b> — upload a webshell only if the FTP directory is served by HTTP and the extension is executable.
+- <b>Weak credentials</b> — after reading any policy; FTP has no lockout by default, but brute force is slow and noisy.
+- <b>ProFTPD </b><b><code>mod_copy</code></b> — <code>SITE CPFR</code>/<code>SITE CPTO</code> can copy files without auth on misconfigured servers (version-dependent).
+
+> Every item above is a lab technique. None of them is a first step, and each needs its precondition verified first.
+
+## 10. Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| <code>530 Login incorrect</code> | Bad credentials, or anonymous disabled | Try <code>anonymous</code>/any password; verify the username |
+| <code>530 Permission denied</code> after login | Account lacks FTP rights | Try another account |
+| <code>425 Failed to establish connection</code> | Passive data port blocked | <code>passive</code> / <code>-p</code> on, or <code>--no-passive-ftp</code> in wget as a last resort |
+| Connection hangs after <code>230</code> | Data channel blocked | Switch passive/active mode |
+| <code>550 Failed to open file</code> | Path or permission | <code>ls</code> the exact directory first |
+| <code>AUTH TLS</code> refused | Plain FTP only | Use <code>ftp</code>, not FTPS |
+| <code>SSL_connect: wrong version</code> | FTPS server with a legacy TLS version | <code>openssl s_client -connect <TARGET_IP>:21 -starttls ftp</code> to inspect |
+
+<b>Stop condition:</b> anonymous denied, no credentials, and no writable or web-served directory → FTP is a dead end. Move to the next service.
+
+## 11. Quick workflow
+
+1. <code>nmap -sCV -p21</code> — version.
+2. <code>nmap --script ftp-anon,ftp-syst,ftp-vsftpd-backdoor -p21</code> — anonymous check.
+3. <code>ftp -p <TARGET_IP></code> — log in as <code>anonymous</code>, <code>ls -la</code>.
+4. <code>wget -m ftp://anonymous:anonymous@<TARGET_IP>/</code> — mirror.
+5. <code>file</code> + <code>grep</code> the loot — credentials, configs, source.
+6. <code>searchsploit <product> <version></code> — only if the version is unusual.
+7. Write test — only if authorised and the directory looks web-served.
+8. Record the banner, the anonymous result, and every file path you used.
+
+## 12. Evidence to preserve
+
+- The <code>220</code> banner and the <code>230</code> anonymous response.
+- The recursive directory listing.
+- Every downloaded file, kept in <code><OUTPUT_DIR></code> with its original name.
+- The exact <code>get</code>/<code>wget</code> command for anything you quote in the report.
+
+## 13. Related pages
+
+- [Nmap — Complete Command Reference](https://app.notion.com/p/4011e51238b581669e09d615530aa92a) — port discovery and script selection
+- [HTTP & HTTPS — Complete Command Reference](https://app.notion.com/p/4011e51238b581649211c0c5db9c94f8) — if FTP shares a web root
+- [SSH — Complete Command Reference](https://app.notion.com/p/4011e51238b58123b446cc627bc02913) — SFTP is SSH, not FTP
+- [📖 OSCP Command Handbook](https://app.notion.com/p/4011e51238b581689fafe0600844e4a7) — placeholders and statuses
+
+## 14. References
+
+- <code>ftp(1)</code> — <code>-p</code> is passive mode: [https://man7.org/linux/man-pages/man1/ftp.1.html](https://man7.org/linux/man-pages/man1/ftp.1.html)
+- NSE <code>ftp-anon</code>: [https://nmap.org/nsedoc/scripts/ftp-anon.html](https://nmap.org/nsedoc/scripts/ftp-anon.html)
+- vsftpd security notes: [https://security.appspot.com/vsftpd.html](https://security.appspot.com/vsftpd.html)
+
+## 15. Verification note
+
+Flags were checked against the local <code>ftp</code>, <code>wget</code> and <code>nmap</code> help output. No FTP session was opened against a live host for this page; everything is <b>Syntax Checked</b> or <b>Documented</b>. The <code>ftp -p</code> clarification (passive mode, not port) is a correction of a common misreading, not a lab result.

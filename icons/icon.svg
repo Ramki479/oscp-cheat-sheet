@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="OSCP Cheat Sheet">
+  <rect width="512" height="512" rx="96" fill="#0b0f14"/>
+  <rect x="24" y="24" width="464" height="464" rx="76" fill="none" stroke="#22303f" stroke-width="6"/>
+  <text x="256" y="300" text-anchor="middle" fill="#ffb454"
+        font-family="ui-monospace, Menlo, Consolas, monospace" font-size="188" font-weight="700">&gt;_</text>
+</svg>

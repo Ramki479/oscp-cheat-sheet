@@ -1,0 +1,16 @@
+{
+  "name": "oscp-cheat-sheet",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Static, offline-ready OSCP command cheat sheet generated from the OSCP Command Handbook.",
+  "scripts": {
+    "build": "node tools/parse.mjs",
+    "validate": "node tools/validate.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "serve": "python3 -m http.server 8000"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.16.0"
+  }
+}

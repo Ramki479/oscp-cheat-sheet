@@ -1,0 +1,83 @@
+{
+ "generatedAt": "2026-10-23T05:33:20.290Z",
+ "source": {
+  "pages": 23,
+  "steps": 298,
+  "commands": 278,
+  "rawBytes": 369057,
+  "checksums": {
+   "active-directory.html": "eecf63841132eed3",
+   "attack-workflow.html": "bd2c7e63cf9bf827",
+   "bloodhound.html": "06a3a90fc549996b",
+   "directory-vhost.html": "ca429046dd4b826c",
+   "dns.html": "6f9ff2fed90013ad",
+   "exam-checklist.html": "216d0fd49daa4d5d",
+   "exam-execution.html": "3bec62e08a68e45f",
+   "exam-rules.html": "49c63bc77f4a5741",
+   "exploit-research.html": "6cadd6c09b6f3a3f",
+   "ftp.html": "796ccae9f8727519",
+   "http.html": "dfae934c64fbb035",
+   "linux-privesc.html": "f0b838252e509c3c",
+   "machine-notes.html": "a824b9b69db3bcc2",
+   "nmap.html": "28835ec4aa613c25",
+   "other-services.html": "1b2eb04fcb3218b2",
+   "passwords.html": "032930e41410a1fc",
+   "post-exploitation.html": "25b45b8c1551dc51",
+   "shells.html": "a3d2874128b4d649",
+   "smb.html": "66d5ecb22701edbb",
+   "ssh.html": "f438c9ad77113acf",
+   "troubleshooting.html": "0383d0017451184e",
+   "tunneling.html": "f96ee9d49e8ebb1d",
+   "windows-privesc.html": "456bc9e68e3ab9f6"
+  }
+ },
+ "statuses": [
+  "Syntax Checked",
+  "Lab Tested",
+  "Documented — Untested",
+  "Version-Dependent"
+ ],
+ "priorities": [
+  "Core",
+  "Conditional",
+  "Advanced"
+ ],
+ "stepsWithoutCommand": 21,
+ "noteSteps": [
+  "nmap step 24",
+  "smb step 17",
+  "smb step 18",
+  "smb step 19",
+  "ftp step 12",
+  "http step 14",
+  "http step 15",
+  "http step 16",
+  "active-directory step 13",
+  "active-directory step 14",
+  "bloodhound step 09",
+  "exploit-research step 05",
+  "exploit-research step 14",
+  "machine-notes step 01",
+  "machine-notes step 02",
+  "exam-execution step 07",
+  "exam-execution step 09",
+  "exam-execution step 10",
+  "exam-execution step 12",
+  "troubleshooting step 07",
+  "troubleshooting step 09"
+ ],
+ "duplicateStepIds": [],
+ "warnings": [
+  "active-directory: [status] Active Directory — Complete Command Reference · Step 13: \"Documentation-based\" -> Documented — Untested",
+  "bloodhound: [status] BloodHound — Collection and Path Analysis · Step 12: \"Documentation-based\" -> Documented — Untested",
+  "bloodhound: [status] BloodHound — Collection and Path Analysis · Step 14: \"Documentation-based\" -> Documented — Untested",
+  "dns: [priority] DNS — Complete Command Reference · Step 09: \"Core (AD labs)\" -> Core",
+  "exam-execution: [status] Exam Execution & Reporting — Proof, Timeline and Submission · Step 12: \"Documentation-based\" -> Documented — Untested",
+  "linux-privesc: [status] Linux Privilege Escalation — Complete Command Reference · Step 03: \"Documentation-based\" -> Documented — Untested",
+  "machine-notes: [meta] OSCP Machine Notes — Template · Step 01: metadata line not matched",
+  "nmap: [priority] Nmap — Complete Command Reference · Step 24: \"Core (read)\" -> Core",
+  "post-exploitation: [status] Post-Exploitation & Lateral Movement — NetExec and Impacket · Step 18: \"Documentation-based\" -> Documented — Untested",
+  "windows-privesc: [status] Windows Privilege Escalation — Complete Command Reference · Step 12: \"Documentation-based\" -> Documented — Untested",
+  "windows-privesc: [status] Windows Privilege Escalation — Complete Command Reference · Step 19: \"Documentation-based\" -> Documented — Untested"
+ ]
+}

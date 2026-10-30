@@ -1,0 +1,525 @@
+{
+  "id": "4011e51238b58123b446cc627bc02913",
+  "slug": "ssh",
+  "title": "SSH — Complete Command Reference",
+  "icon": "🔑",
+  "group": "services",
+  "groupLabel": "Services",
+  "tags": [
+    "ssh"
+  ],
+  "description": "confirm SSH, work out which authentication is actually possible, and handle keys and passphrases correctly — forwarding lives on its own page.",
+  "intro": [],
+  "sections": [
+    {
+      "id": "ssh-priority-status-legend",
+      "title": "Priority & status legend",
+      "rawTitle": "Priority & status legend",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "**Priority:** Core / Conditional / Advanced. **Status:** Syntax Checked · Documented — Untested."
+        }
+      ],
+      "tables": []
+    },
+    {
+      "id": "ssh-prerequisites-and-execution-location",
+      "title": "Prerequisites and execution location",
+      "rawTitle": "Prerequisites and execution location",
+      "blocks": [
+        {
+          "type": "ul",
+          "items": [
+            "**Runs on:** Kali Linux.",
+            "**Needs:** `ssh`, `ssh-keygen`, `ssh2john`; `nmap` with the `ssh-*` scripts.",
+            "**Out of scope here:** `-L`, `-R`, `-D` and proxying → **SSH Tunneling & Port Forwarding** *(batch 6)*."
+          ]
+        }
+      ],
+      "tables": []
+    },
+    {
+      "id": "ssh-pivoting-variant-internal-hosts-only",
+      "title": "Pivoting variant — internal hosts only",
+      "rawTitle": "Pivoting variant — internal hosts only",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "`proxychains4 ssh <USERNAME>@<TARGET_IP>` works but is slow and fragile. Prefer ProxyJump: `ssh -J <USERNAME>@<PIVOT_HOST> <USERNAME>@<TARGET_IP>` — one session, no SOCKS layer, and the resulting shell can still forward ports with `-L`."
+        }
+      ],
+      "tables": []
+    },
+    {
+      "id": "ssh-detect-ssh",
+      "title": "Detect SSH",
+      "rawTitle": "1. Detect SSH",
+      "blocks": [
+        {
+          "type": "step",
+          "id": "ssh-01",
+          "n": "01",
+          "title": "Confirm the service and version",
+          "priority": "Core",
+          "priorityRaw": "Core",
+          "runOn": "kali",
+          "status": "Syntax Checked",
+          "statusRaw": "Syntax Checked",
+          "commands": [
+            {
+              "lang": "bash",
+              "code": "nmap -sCV -p22 --script ssh-auth-methods,ssh2-enum-algos <TARGET_IP>"
+            }
+          ],
+          "fields": {
+            "lookFor": "`OpenSSH `, the accepted auth methods, and the KEX/host-key algorithms.",
+            "decision": "`publickey` only → hunt for keys (Step 04). `password` allowed → Step 03, carefully.",
+            "next": "Step 02.",
+            "mistake": "assuming an unusual port means \"not SSH\" — check the banner on every unknown port.",
+            "evidence": "the version and the auth-methods line."
+          },
+          "notes": "",
+          "tables": [],
+          "service": "ssh",
+          "tags": [
+            "ssh"
+          ]
+        }
+      ],
+      "tables": []
+    },
+    {
+      "id": "ssh-authentication-method-discovery",
+      "title": "Authentication-method discovery",
+      "rawTitle": "2. Authentication-method discovery",
+      "blocks": [
+        {
+          "type": "step",
+          "id": "ssh-02",
+          "n": "02",
+          "title": "Ask without authenticating",
+          "priority": "Core",
+          "priorityRaw": "Core",
+          "runOn": "kali",
+          "status": "Syntax Checked",
+          "statusRaw": "Syntax Checked",
+          "commands": [
+            {
+              "lang": "bash",
+              "code": "ssh -o PreferredAuthentications=none -o StrictHostKeyChecking=no <USERNAME>@<TARGET_IP>"
+            }
+          ],
+          "fields": {
+            "lookFor": "`Permission denied (publickey,password).` — the list is the answer.",
+            "decision": "the methods shown decide your next move; nothing is attempted yet.",
+            "next": "Step 03 or Step 04.",
+            "mistake": "using `ssh -v` for this and reading a wall of debug output — the `PreferredAuthentications=none` form answers the question in one line.",
+            "evidence": "the exact method list."
+          },
+          "notes": "",
+          "tables": [],
+          "service": "ssh",
+          "tags": [
+            "ssh"
+          ]
+        },
+        {
+          "type": "step",
+          "id": "ssh-03",
+          "n": "03",
+          "title": "Verbose connection trace",
+          "priority": "Conditional",
+          "priorityRaw": "Conditional",
+          "runOn": "kali",
+          "status": "Syntax Checked",
+          "statusRaw": "Syntax Checked",
+          "commands": [
+            {
+              "lang": "bash",
+              "code": "ssh -v <USERNAME>@<TARGET_IP>"
+            }
+          ],
+          "fields": {
+            "lookFor": "`Authentications that can continue:`, server host key type, and where the handshake stops.",
+            "decision": "handshake fails before auth → algorithm or network problem (Step 07/08). Auth list shown → normal.",
+            "next": "Step 03 (credentials) or Step 04 (keys).",
+            "mistake": "leaving it running — it will prompt for a password; Ctrl-C.",
+            "evidence": "the algorithm and auth-method lines."
+          },
+          "notes": "",
+          "tables": [],
+          "service": "ssh",
+          "tags": [
+            "ssh"
+          ]
+        }
+      ],
+      "tables": []
+    },
+    {
+      "id": "ssh-credential-testing-careful",
+      "title": "Credential testing (careful)",
+      "rawTitle": "3. Credential testing (careful)",
+      "blocks": [
+        {
+          "type": "step",
+          "id": "ssh-04",
+          "n": "04",
+          "title": "One deliberate attempt, not a brute force",
+          "priority": "Conditional",
+          "priorityRaw": "Conditional",
+          "runOn": "kali",
+          "status": "Documented — Untested",
+          "statusRaw": "Documented — Untested",
+          "commands": [
+            {
+              "lang": "bash",
+              "code": "sshpass -p '<PASSWORD>' ssh -o StrictHostKeyChecking=no <USERNAME>@<TARGET_IP>"
+            }
+          ],
+          "fields": {
+            "lookFor": "a shell, or `Permission denied`.",
+            "decision": "denied → stop. Do not loop over a wordlist: SSH is slow and noisy, and repeated failures may be logged or blocked.",
+            "next": "find a better credential source (shares, configs, notes).",
+            "mistake": "spraying SSH before checking SMB/HTTP for credentials; the password is usually already on the box.",
+            "evidence": "the success banner and host key fingerprint."
+          },
+          "notes": "",
+          "tables": [],
+          "service": "ssh",
+          "tags": [
+            "ssh"
+          ]
+        }
+      ],
+      "tables": []
+    },
+    {
+      "id": "ssh-key-identification-and-inspection",
+      "title": "Key identification and inspection",
+      "rawTitle": "4. Key identification and inspection",
+      "blocks": [
+        {
+          "type": "step",
+          "id": "ssh-05",
+          "n": "05",
+          "title": "Identify a found key",
+          "priority": "Core",
+          "priorityRaw": "Core",
+          "runOn": "kali",
+          "status": "Syntax Checked",
+          "statusRaw": "Syntax Checked",
+          "commands": [
+            {
+              "lang": "bash",
+              "code": "file <KEY_FILE>\nhead -1 <KEY_FILE>\nssh-keygen -y -f <KEY_FILE>"
+            }
+          ],
+          "fields": {
+            "lookFor": "`OpenSSH private key` vs `PEM RSA private key`; `ssh-keygen -y` printing the public key (and prompting for a passphrase if encrypted).",
+            "decision": "passphrase prompt → Step 07. Public key prints → the key is usable as-is.",
+            "next": "Step 06.",
+            "mistake": "a `-----BEGIN OPENSSH PRIVATE KEY-----` key in an old tool that only understands PEM — convert with `ssh-keygen -p -m PEM -f <KEY_FILE>`.",
+            "evidence": "the key type and fingerprint (`ssh-keygen -lf <KEY_FILE>.pub`)."
+          },
+          "notes": "",
+          "tables": [],
+          "service": "ssh",
+          "tags": [
+            "ssh"
+          ]
+        },
+        {
+          "type": "step",
+          "id": "ssh-06",
+          "n": "06",
+          "title": "Check matching public keys",
+          "priority": "Conditional",
+          "priorityRaw": "Conditional",
+          "runOn": "kali",
+          "status": "Syntax Checked",
+          "statusRaw": "Syntax Checked",
+          "commands": [
+            {
+              "lang": "bash",
+              "code": "ssh-keygen -lf <KEY_FILE> # fingerprint\nssh-keygen -lf ~/.ssh/authorized_keys"
+            }
+          ],
+          "fields": {
+            "lookFor": "the same fingerprint on both sides.",
+            "decision": "fingerprint matches a user's `authorized_keys` (found in a share or web root) → that key logs in as that user.",
+            "next": "`ssh -i <KEY_FILE> <USERNAME>@<TARGET_IP>`.",
+            "mistake": "comparing key *text* by eye; fingerprints are the reliable comparison.",
+            "evidence": "the fingerprint pair."
+          },
+          "notes": "",
+          "tables": [],
+          "service": "ssh",
+          "tags": [
+            "ssh"
+          ]
+        }
+      ],
+      "tables": []
+    },
+    {
+      "id": "ssh-key-permissions",
+      "title": "Key permissions",
+      "rawTitle": "5. Key permissions",
+      "blocks": [
+        {
+          "type": "step",
+          "id": "ssh-07",
+          "n": "07",
+          "title": "Fix permissions before SSH refuses the key",
+          "priority": "Core",
+          "priorityRaw": "Core",
+          "runOn": "kali",
+          "status": "Syntax Checked",
+          "statusRaw": "Syntax Checked",
+          "commands": [
+            {
+              "lang": "bash",
+              "code": "chmod 600 <KEY_FILE>"
+            }
+          ],
+          "fields": {
+            "lookFor": "no output; the `Permissions 0644... are too open` warning disappears.",
+            "decision": "warning persists → check ownership too (`ls -l`).",
+            "next": "`ssh -i <KEY_FILE> <USERNAME>@<TARGET_IP>`.",
+            "mistake": "editing the key inside a mounted share — copy it to `<OUTPUT_DIR>` first, then `chmod`.",
+            "evidence": "`ls -l <KEY_FILE>` showing mode `-rw-------`."
+          },
+          "notes": "",
+          "tables": [],
+          "service": "ssh",
+          "tags": [
+            "ssh"
+          ]
+        }
+      ],
+      "tables": []
+    },
+    {
+      "id": "ssh-passphrase-protected-keys",
+      "title": "Passphrase-protected keys",
+      "rawTitle": "6. Passphrase-protected keys",
+      "blocks": [
+        {
+          "type": "step",
+          "id": "ssh-08",
+          "n": "08",
+          "title": "Detect the passphrase",
+          "priority": "Core",
+          "priorityRaw": "Core",
+          "runOn": "kali",
+          "status": "Syntax Checked",
+          "statusRaw": "Syntax Checked",
+          "commands": [
+            {
+              "lang": "bash",
+              "code": "ssh-keygen -y -f <KEY_FILE>"
+            }
+          ],
+          "fields": {
+            "lookFor": "`Enter passphrase:` → encrypted; a printed `ssh-rsa AAAA...` → not encrypted.",
+            "decision": "encrypted → Step 09.",
+            "next": "Step 09.",
+            "mistake": "assuming an encrypted key is unusable — it is crackable if the passphrase is weak.",
+            "evidence": "whether a passphrase is required."
+          },
+          "notes": "",
+          "tables": [],
+          "service": "ssh",
+          "tags": [
+            "ssh"
+          ]
+        },
+        {
+          "type": "step",
+          "id": "ssh-09",
+          "n": "09",
+          "title": "Crack the passphrase",
+          "priority": "Core",
+          "priorityRaw": "Core",
+          "runOn": "kali",
+          "status": "Syntax Checked",
+          "statusRaw": "Syntax Checked",
+          "commands": [
+            {
+              "lang": "bash",
+              "code": "ssh2john <KEY_FILE> > <OUTPUT_FILE>\njohn --wordlist=<WORDLIST> <OUTPUT_FILE>\njohn --show <OUTPUT_FILE>"
+            }
+          ],
+          "fields": {
+            "lookFor": "`<KEY_FILE>: `.",
+            "decision": "cracked → `ssh -i <KEY_FILE>` and enter it. Not cracked → try a targeted wordlist; do not burn the clock.",
+            "next": "log in, then enumerate.",
+            "mistake": "`ssh2john` needs the file path, not piped stdin in older versions — and the output must go to a file for `john`.",
+            "evidence": "the cracked passphrase (store it in the machine notes, not in a shared page)."
+          },
+          "notes": "",
+          "tables": [],
+          "service": "ssh",
+          "tags": [
+            "ssh"
+          ]
+        }
+      ],
+      "tables": []
+    },
+    {
+      "id": "ssh-weak-or-legacy-algorithms",
+      "title": "Weak or legacy algorithms",
+      "rawTitle": "7. Weak or legacy algorithms",
+      "blocks": [
+        {
+          "type": "step",
+          "id": "ssh-10",
+          "n": "10",
+          "title": "Read the algorithm list",
+          "priority": "Conditional",
+          "priorityRaw": "Conditional",
+          "runOn": "kali",
+          "status": "Syntax Checked",
+          "statusRaw": "Syntax Checked",
+          "commands": [
+            {
+              "lang": "bash",
+              "code": "nmap -p22 --script ssh2-enum-algos <TARGET_IP>"
+            }
+          ],
+          "fields": {
+            "lookFor": "`diffie-hellman-group1-sha1`, `ssh-rsa`, `arcfour`, `3des-cbc`.",
+            "decision": "legacy algorithms are a **hardening finding**, not an authentication bypass. They may matter for an old client or a MITM scenario, nothing more.",
+            "next": "Step 11 only if you actually need to connect with a legacy client.",
+            "mistake": "reporting \"weak SSH algorithms\" as if it grants access. It does not.",
+            "evidence": "the algorithm list, labelled as a configuration observation."
+          },
+          "notes": "",
+          "tables": [],
+          "service": "ssh",
+          "tags": [
+            "ssh"
+          ]
+        },
+        {
+          "type": "step",
+          "id": "ssh-11",
+          "n": "11",
+          "title": "Connect with legacy algorithms when required",
+          "priority": "Advanced",
+          "priorityRaw": "Advanced",
+          "runOn": "kali",
+          "status": "Documented — Untested",
+          "statusRaw": "Documented — Untested",
+          "commands": [
+            {
+              "lang": "bash",
+              "code": "ssh -oKexAlgorithms=+diffie-hellman-group1-sha1 -oHostKeyAlgorithms=+ssh-rsa -oPubkeyAcceptedAlgorithms=+ssh-rsa <USERNAME>@<TARGET_IP>"
+            }
+          ],
+          "fields": {
+            "lookFor": "a successful handshake where the default client refused.",
+            "decision": "still fails → the server may require an even older cipher (`-c 3des-cbc`).",
+            "next": "use the session normally.",
+            "mistake": "leaving these options in your shell history for later targets — they weaken every future connection.",
+            "evidence": "the forced options, so the result is reproducible."
+          },
+          "notes": "",
+          "tables": [],
+          "service": "ssh",
+          "tags": [
+            "ssh"
+          ]
+        }
+      ],
+      "tables": []
+    },
+    {
+      "id": "ssh-troubleshooting",
+      "title": "Troubleshooting",
+      "rawTitle": "8. Troubleshooting",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "| Symptom | Cause | Fix | | --- | --- | --- | | `Connection refused` | Nothing listening, or wrong port | Confirm the port scan | | `Connection timed out` | Firewall | Try through a pivot | | `Permission denied (publickey)` | No matching key | Find the key, or another user | | `Too many authentication failures` | Agent offering every key | `-o IdentitiesOnly=yes -i <KEY_FILE>` | | `REMOTE HOST IDENTIFICATION HAS CHANGED` | Rebuilt host, new key | `ssh-keygen -R <TARGET_IP>` | | `no matching host key type found` | Client too new for server | Step 11 | | `Permissions 0644... are too open` | Key mode | `chmod 600` | | `Load key... invalid format` | PEM vs OpenSSH | `ssh-keygen -p -m PEM -f <KEY_FILE>` |"
+        },
+        {
+          "type": "p",
+          "text": "**Stop condition:** no credentials, no keys, and password auth denied → SSH is not the entry point. Re-check shares and web roots for a key before giving up."
+        }
+      ],
+      "tables": []
+    },
+    {
+      "id": "ssh-quick-workflow",
+      "title": "Quick workflow",
+      "rawTitle": "9. Quick workflow",
+      "blocks": [
+        {
+          "type": "ol",
+          "items": [
+            "`nmap -sCV -p22 --script ssh-auth-methods,ssh2-enum-algos`.",
+            "`ssh -o PreferredAuthentications=none <USERNAME>@<TARGET_IP>` — methods.",
+            "Search shares/web roots for keys and credentials.",
+            "`file` + `ssh-keygen -y -f` the key.",
+            "`chmod 600`.",
+            "Encrypted → `ssh2john` + `john`.",
+            "`ssh -i <KEY_FILE> <USERNAME>@<TARGET_IP>`.",
+            "Enumerate from the new shell; then go to the privesc page."
+          ]
+        }
+      ],
+      "tables": []
+    },
+    {
+      "id": "ssh-evidence-to-preserve",
+      "title": "Evidence to preserve",
+      "rawTitle": "10. Evidence to preserve",
+      "blocks": [
+        {
+          "type": "ul",
+          "items": [
+            "The auth-method line.",
+            "Key fingerprints (both sides) and the `ls -l` permission proof.",
+            "The exact `ssh` command that worked.",
+            "Host key fingerprint, if the report asks you to prove the host identity."
+          ]
+        }
+      ],
+      "tables": []
+    },
+    {
+      "id": "ssh-references",
+      "title": "References",
+      "rawTitle": "12. References",
+      "blocks": [
+        {
+          "type": "ul",
+          "items": [
+            "`ssh_config` manual: [https://man.openbsd.org/ssh\\_config](https://man.openbsd.org/ssh_config)",
+            "`ssh-keygen` manual: [https://man.openbsd.org/ssh-keygen](https://man.openbsd.org/ssh-keygen)",
+            "OpenSSH release notes (algorithm deprecations): [https://www.openssh.com/releasenotes.html](https://www.openssh.com/releasenotes.html)"
+          ]
+        }
+      ],
+      "tables": []
+    },
+    {
+      "id": "ssh-verification-note",
+      "title": "Verification note",
+      "rawTitle": "13. Verification note",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Flags were checked against the local `ssh`, `ssh-keygen`, `ssh2john` and `nmap` help output. No SSH session was opened against a live host for this page; nothing is **Lab Tested**. The weak-algorithm section is explicitly a configuration finding, not an access path."
+        }
+      ],
+      "tables": []
+    }
+  ],
+  "stepCount": 11,
+  "commandCount": 11
+}

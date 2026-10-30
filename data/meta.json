@@ -1,0 +1,75 @@
+{
+ "generatedAt": "2026-10-30T06:17:03.371Z",
+ "pageCount": 25,
+ "source": {
+  "pages": 24,
+  "steps": 321,
+  "commands": 321,
+  "rawBytes": 411271,
+  "checksums": {
+   "active-directory.html": "7d8ee17023cdbcf2",
+   "attack-workflow.html": "bd2c7e63cf9bf827",
+   "bleeding-edge.html": "c145a7c74f45b3ae",
+   "bloodhound.html": "69c019b145cabbb4",
+   "directory-vhost.html": "386c957e6c4414eb",
+   "dns.html": "b6ac22f8f77ff231",
+   "exam-checklist.html": "216d0fd49daa4d5d",
+   "exam-execution.html": "9b2b908c9c4943b3",
+   "exam-rules.html": "49c63bc77f4a5741",
+   "exploit-research.html": "256514b7d7457ba7",
+   "ftp.html": "b35f69cf34523fb2",
+   "http.html": "13edea1d22a87aae",
+   "linux-privesc.html": "40b1469a2d7bd3a0",
+   "machine-notes.html": "a824b9b69db3bcc2",
+   "nmap.html": "2e0c316e65614bde",
+   "other-services.html": "a0b202b0e89cd2d1",
+   "passwords.html": "265edc8a9964ef9a",
+   "post-exploitation.html": "6b59ccafd5c6dac4",
+   "shells.html": "e27f88621ec1374a",
+   "smb.html": "db86b029572ca8f1",
+   "ssh.html": "50effbf7b6f40d1d",
+   "troubleshooting.html": "0383d0017451184e",
+   "tunneling.html": "91118aa21f8c2f42",
+   "windows-privesc.html": "afe78e1ec5aa353e"
+  }
+ },
+ "statuses": [
+  "Lab Tested",
+  "Simulated",
+  "Syntax Checked",
+  "Environment Dependent",
+  "Documented"
+ ],
+ "priorities": [
+  "Core",
+  "Conditional",
+  "Advanced"
+ ],
+ "stepsWithoutCommand": 18,
+ "noteSteps": [
+  "nmap step 24",
+  "smb step 17",
+  "smb step 18",
+  "smb step 19",
+  "ftp step 12",
+  "http step 14",
+  "http step 15",
+  "http step 16",
+  "active-directory step 13",
+  "active-directory step 14",
+  "exploit-research step 05",
+  "exploit-research step 14",
+  "exam-execution step 07",
+  "exam-execution step 09",
+  "exam-execution step 10",
+  "exam-execution step 12",
+  "troubleshooting step 07",
+  "troubleshooting step 09"
+ ],
+ "duplicateStepIds": [],
+ "warnings": [
+  "dns: [priority] DNS — Complete Command Reference · Step 09: \"Core (AD labs)\" -> Core",
+  "machine-notes: [meta] OSCP Machine Notes — Template · Step 01: metadata line not matched",
+  "nmap: [priority] Nmap — Complete Command Reference · Step 24: \"Core (read)\" -> Core"
+ ]
+}

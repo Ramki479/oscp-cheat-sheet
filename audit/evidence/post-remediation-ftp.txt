@@ -1,0 +1,29 @@
+# AUD-12 FTP evidence — 2026-10-30
+# Isolated loopback lab: pyftpdlib 2.2.0 anonymous server on 127.0.0.1:2121
+
+## 1. The site's NSE command (nmap -p2121 --script ftp-anon,ftp-syst 127.0.0.1)
+# No ftp-anon line is printed even though anonymous login works:
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-10-30 11:41 +0530
+Nmap scan report for localhost (127.0.0.1)
+Host is up (0.000073s latency).
+
+PORT     STATE SERVICE
+2121/tcp open  ccproxy-ftp
+
+Nmap done: 1 IP address (1 host up) scanned in 0.11 seconds
+
+## 2. The manual check added to ftp-02 (port adapted to 2121 for the lab)
+$ curl -sS --max-time 10 -v ftp://anonymous:anonymous@127.0.0.1:2121/ 2>&1 | grep -E '^< (220|230|530)'
+< 220 pyftpdlib 2.2.0 ready.
+< 230 Login successful.
+# -> 230 = anonymous access confirmed (the confirmed branch of the new table)
+
+$ curl -sS --max-time 10 -v ftp://nobody:wrong@127.0.0.1:2121/ 2>&1 | grep -E '^< (220|230|530)'
+< 220 pyftpdlib 2.2.0 ready.
+< 530 Authentication failed.
+# -> 530 = credential refused (the denied branch of the new table)
+
+## 3. Directory listing with the same URL
+-rw-rw-r--   1 ramki    ramki           8 Oct 30 06:10 README.txt
+-rw-rw-r--   1 ramki    ramki          10 Oct 29 12:37 readme.txt
+drwxrwxr-x   2 ramki    ramki          60 Oct 29 12:37 sub

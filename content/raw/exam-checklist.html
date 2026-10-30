@@ -1,0 +1,250 @@
+
+> <b>Purpose:</b> a tick-list for the 24 hours before the exam, the first 30 minutes, every machine, every proof, and the submission window. If a box is unticked, do not move on.
+
+## T-7 days
+
+- ☐ Re-read the current official exam guide; note its date.
+- ☐ Confirm tool restrictions (SQLmap, mass scanners, AI chatbots) and Metasploit limits.
+- ☐ Check Kali is updated: <code>sudo apt update && sudo apt full-upgrade</code>.
+- ☐ Confirm your wordlists exist: <code>ls /usr/share/seclists/Discovery/Web-Content/</code>.
+- ☐ Test the report template: one dummy machine, one PDF export, one <code>.7z</code>.
+- ☐ Practise the proof screenshot: <code>cat</code> + <code>ip addr</code> in the same terminal, one image.
+- ☐ Confirm your note-taking page structure (Machine Notes template).
+
+## T-24 hours
+
+- ☐ Sleep. A 23h45m exam is an endurance event.
+- ☐ Prepare food, water, coffee, and a second internet connection if possible.
+- ☐ Charge laptop, test webcam/microphone for proctoring.
+- ☐ Clean the desktop; close anything you do not want a proctor to see.
+- ☐ Create <code>~/exam/{recon,loot,notes,report}</code>.
+- ☐ Confirm the VPN client works with a practice <code>.ovpn</code> if you have one.
+
+## First 30 minutes
+
+- ☐ Start the proctoring session and authenticate.
+- ☐ Download and extract the exam connection pack.
+- ☐ Connect: <code>sudo openvpn <VPN_FILE>.ovpn</code>; confirm <code>tun0</code> with <code>ip a</code>.
+- ☐ Note the <b>exact</b> start time; compute the hard stop (23:45 later).
+- ☐ Open the control panel; read <b>every</b> machine's specific objectives.
+- ☐ Create one notes page per machine from the template.
+- ☐ Confirm target IPs and put them in the notes.
+- ☐ Do <b>not</b> start scanning before the notes exist.
+
+## Per machine
+
+- ☐ Record name, IP, OS, points, objectives.
+- ☐ Full TCP scan (<code>-p-</code>) with <code>-oA</code> into <code><OUTPUT_DIR></code>.
+- ☐ Version + default scripts on open ports.
+- ☐ UDP top-50 if the host looks sparse.
+- ☐ Service-specific enumeration from the matching handbook page.
+- ☐ Credentials table: username, secret, source path, where validated.
+- ☐ After <b>every</b> new credential, re-enumerate SMB shares, WinRM, RDP, SSH and web logins.
+- ☐ Local enumeration immediately after the first shell.
+- ☐ Privesc attempt documented with the command that proved it.
+- ☐ Revert log updated if you revert.
+- ☐ Dead ends recorded (they explain your time).
+
+## Per proof
+
+- ☐ <code>local.txt</code> read with <code>cat</code>/<code>type</code> <b>from its original path</b>.
+- ☐ <code>proof.txt</code> read the same way, as root/Administrator/SYSTEM.
+- ☐ Screenshot shows <b>file contents + IP address</b> (<code>ip addr</code>/<code>ipconfig</code>).
+- ☐ Shell is <b>interactive</b> — not a web shell, not a one-liner from a tool.
+- ☐ Contents pasted into the <b>control panel</b> before the exam ends.
+- ☐ Screenshot filename recorded in the notes next to the command.
+- ☐ Screenshot inserted into the report beside the step that produced it.
+
+## Evidence conventions
+
+<table header-row="true">
+<colgroup>
+<col />
+<col width="460" />
+</colgroup>
+<tr>
+<td>
+Item
+</td>
+<td>
+Convention
+</td>
+</tr>
+<tr>
+<td>
+Directory
+</td>
+<td>
+<code>~/exam/loot/<TARGET_IP>/</code>
+</td>
+</tr>
+<tr>
+<td>
+Scan output
+</td>
+<td>
+<code><TARGET_IP>-<service>-<step>.nmap/.xml</code>
+</td>
+</tr>
+<tr>
+<td>
+Screenshots
+</td>
+<td>
+<code><TARGET_IP>-<step>-<what>.png</code>
+</td>
+</tr>
+<tr>
+<td>
+Notes
+</td>
+<td>
+one page per machine, append-only
+</td>
+</tr>
+<tr>
+<td>
+Credentials
+</td>
+<td>
+username · secret · type · exact source path · where validated
+</td>
+</tr>
+</table>
+
+> The report must let a competent reader repeat your attack. If a command is not in the notes, it will not be in the report.
+
+## Time checkpoints
+
+<table header-row="true">
+<colgroup>
+<col />
+<col width="369" />
+</colgroup>
+<tr>
+<td>
+Elapsed
+</td>
+<td>
+You should be here
+</td>
+</tr>
+<tr>
+<td>
+0:15
+</td>
+<td>
+VPN up, objectives read, notes created
+</td>
+</tr>
+<tr>
+<td>
+4:00
+</td>
+<td>
+First standalone owned, proof captured
+</td>
+</tr>
+<tr>
+<td>
+8:00
+</td>
+<td>
+Second standalone owned, or a clear blocker documented
+</td>
+</tr>
+<tr>
+<td>
+12:00
+</td>
+<td>
+Third standalone owned, or re-prioritised
+</td>
+</tr>
+<tr>
+<td>
+17:00
+</td>
+<td>
+AD set: all three machines owned
+</td>
+</tr>
+<tr>
+<td>
+20:00
+</td>
+<td>
+Report writing started
+</td>
+</tr>
+<tr>
+<td>
+22:00
+</td>
+<td>
+Report drafted; proofs re-checked
+</td>
+</tr>
+<tr>
+<td>
+23:00
+</td>
+<td>
+Submission package built and tested
+</td>
+</tr>
+<tr>
+<td>
+23:45
+</td>
+<td>
+<b>Exam ends</b> — no more submissions to the control panel
+</td>
+</tr>
+</table>
+
+## Last 60 minutes of the exam
+
+- ☐ Every <code>local.txt</code> and <code>proof.txt</code> submitted in the control panel.
+- ☐ Every proof has a screenshot with the IP visible.
+- ☐ Report has one section per machine, in the order you want them graded.
+- ☐ Commands and outputs are present for each attack step.
+- ☐ Modified exploits include the diff explanation; unmodified ones include only the URL.
+- ☐ Report exported to PDF and archived to <code>.7z</code> without a password.
+- ☐ File name matches <code>OSCP-OS-XXXXX-Exam-Report.7z</code>.
+
+## Submission (within 24 hours)
+
+```bash
+7z a OSCP-OS-XXXXX-Exam-Report.7z OSCP-OS-XXXXX-Exam-Report.pdf
+ls -lh OSCP-OS-XXXXX-Exam-Report.7z
+md5sum OSCP-OS-XXXXX-Exam-Report.7z
+```
+
+- ☐ Upload to [https://upload.offsec.com](https://upload.offsec.com) (under 200 MB).
+- ☐ Compare the MD5 shown by the site with your local <code>md5sum</code>.
+- ☐ Click <b>Submit File</b>.
+- ☐ Wait for the confirmation email (check spam).
+- ☐ Keep a local copy of the archive.
+
+## If something goes wrong
+
+| Problem | Action |
+| --- | --- |
+| VPN will not connect | Reconnect; if it persists, report in the proctoring chat immediately |
+| Machine unresponsive | Revert once, wait, then report it |
+| Proctoring tool drops | Reconnect it first; contact support via live chat if it fails |
+| You lose a shell | Revert only if needed; otherwise re-exploit from your notes |
+| Report will not upload | Try a different browser or the Kali VM; verify size and MD5 |
+| Missing screenshot discovered late | It cannot be added after submission — document what you have |
+
+## Related pages
+
+- [OSCP Exam Rules & Tool Restrictions](https://app.notion.com/p/4011e51238b5812ab0e1f4ed40981967)
+- [OSCP Attack Workflow — Start Here](https://app.notion.com/p/4011e51238b581c5ad53c7704de0ebc5)
+- [OSCP Machine Notes — Template](https://app.notion.com/p/4011e51238b5811cb117f8335df3a46f)
+- <mention url="https://app.notion.com/p/4011e51238b581689fafe0600844e4a7">📖 OSCP Command Handbook</mention>
+
+## Verification note
+
+Rule-derived items (proof format, submission naming, upload window) come from the official OSCP+ Exam Guide, checked 22 October 2026. Time checkpoints and conventions are planning advice, not OffSec requirements.

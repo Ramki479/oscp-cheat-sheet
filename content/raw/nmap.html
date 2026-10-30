@@ -1,0 +1,369 @@
+
+> <b>Purpose:</b> find every reachable service on a host, identify it precisely, prove what you found, and save the evidence — in that order.
+
+## Quick navigation
+
+- <b>1.</b> Scope and target
+- <b>2.</b> Host discovery
+- <b>3.</b> Port discovery
+- <b>4.</b> Service and version detection
+- <b>5.</b> UDP scanning
+- <b>6.</b> OS detection
+- <b>7.</b> Service-specific NSE
+- <b>8.</b> Output and evidence
+- <b>9.</b> Performance and timing
+- <b>10.</b> Through a pivot
+- <b>11.</b> Reading the results
+- <b>12.</b> Troubleshooting
+- <b>13.</b> Quick workflow
+- <b>14.</b> Evidence to preserve
+- <b>15.</b> Related pages
+- <b>16.</b> References
+- <b>17.</b> Verification note
+
+<b>Priority:</b> Core = run it almost always · Conditional = when a finding justifies it · Advanced = specialised, do not let it displace core enumeration.<br /><b>Status:</b> <b>Lab Tested</b> = executed against an authorised lab target · <b>Simulated</b> = exercised with simulated output or fixtures · <b>Syntax Checked</b> = flags checked against the installed tool here · <b>Environment Dependent</b> = needs a specific tool, version or host configuration · <b>Documented</b> = standard technique, not run here.
+
+## Prerequisites and execution location
+
+- <b>Runs on:</b> Kali Linux.
+- <b>Needs:</b> <code>sudo</code> for SYN, UDP and OS scans; a route to <code><TARGET_IP></code>; confirmed scope.
+- <b>Output convention:</b> write every scan into <code><OUTPUT_DIR></code> (<code>./recon/<TARGET_IP>/</code>).
+
+## 1. Scope and target
+
+### Step 01 — Confirm connectivity before blaming the target
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked<br /><b>Purpose:</b> separate "target is down" from "my tunnel is broken".
+
+```bash
+ip a; ip route get <TARGET_IP>; ping -c 3 <TARGET_IP>
+```
+
+<b>Look for:</b> <code>tun0</code> with an IP, a route whose <code>dev</code> is that interface, ICMP replies.<br /><b>Decision:</b> no route → reconnect the VPN. Route present but no reply → continue; most exam targets drop ICMP.<br /><b>Next:</b> Step 02.<br /><b>Common mistake:</b> scanning your own VPN subnet, or an IP left over from the previous box.<br /><b>Evidence:</b> note the confirmed IP in the machine notes.
+
+### Step 02 — Create the output directory
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked<br /><b>Purpose:</b> every scan lands somewhere predictable and survives the box.
+
+```bash
+mkdir -p <OUTPUT_DIR> && cd <OUTPUT_DIR>
+```
+
+<b>Look for:</b> no output = success.<br /><b>Decision:</b> if the directory exists, reuse it — never delete earlier scans.<br /><b>Next:</b> Step 03.<br /><b>Common mistake:</b> scanning from <code>~</code> and losing the files among other boxes' output.<br /><b>Evidence:</b> the directory becomes part of the report trail.
+
+## 2. Host discovery
+
+### Step 03 — Ping sweep
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked<br /><b>Purpose:</b> find live hosts in a range without probing ports.
+
+```bash
+nmap -sn <TARGET_IP>/24 -oN <OUTPUT_FILE>
+```
+
+<b>Look for:</b> <code>Nmap scan report for <ip></code> per live host.<br /><b>Decision:</b> a host missing here may still be up (ICMP filtered). For a single known target, skip straight to Step 04 with <code>-Pn</code>.<br /><b>Next:</b> Step 04 on each live host.<br /><b>Common mistake:</b> treating <code>-sn</code> as a port scan — it sends no TCP or UDP port probes, so it cannot find services.<br /><b>Evidence:</b> the host list, if you are enumerating a subnet.
+
+## 3. Port discovery
+
+> <b>Why two scans?</b> The default scan covers the 1,000 most common ports and finishes in seconds-to-minutes — it is the fast first look. A 65,535-port scan finds services on high ports (8080, 8443, 5985, 49152+) that the default list never touches. Run the fast scan first so you have something to work with, then the full scan to close the gap.
+
+### Step 04 — Initial TCP scan (top 1,000)
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked<br /><b>Purpose:</b> quick baseline of the ports most likely to matter.
+
+```bash
+sudo nmap -sS -T4 -oN <OUTPUT_FILE> <TARGET_IP>
+```
+
+<b>Look for:</b> <code>open</code> lines, and any filtered ports with a reason.<br /><b>Decision:</b> open ports → Step 06. All 1,000 filtered → Step 05 with <code>-Pn</code>, then review filtering.<br /><b>Next:</b> Step 05 (full range) — do not stop at the top 1,000.<br /><b>Common mistake:</b> presenting the top-1,000 result as "all ports" and missing the second web app on 8081.<br /><b>Evidence:</b> the normal-format file.
+
+### Step 05 — Full TCP port discovery
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked<br /><b>Purpose:</b> find every listening TCP service.
+
+```bash
+sudo nmap -p- --min-rate 5000 -T4 -oA <OUTPUT_FILE> <TARGET_IP>
+```
+
+<b>Look for:</b> any <code>open</code> port not present in Step 04 — these are usually the interesting ones.<br /><b>Decision:</b> if the scan finishes suspiciously fast or reports <code>host seems down</code>, drop <code>--min-rate</code> and retry with <code>-T3</code>. False negatives are worse than a slow scan.<br /><b>Next:</b> Step 06 on the complete open-port list.<br /><b>Common mistake:</b> <code>--min-rate 5000</code> on a lossy link drops packets → missed ports. Lower the rate before trusting an empty result.<br /><b>Evidence:</b> keep the <code>.nmap</code>, <code>.gnmap</code> and <code>.xml</code> from <code>-oA</code>.
+
+### Step 06 — Targeted version and script scan
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked<br /><b>Purpose:</b> identify the exact product/version on the ports you actually found.
+
+```bash
+sudo nmap -sCV -p <TARGET_PORT> -oA <OUTPUT_FILE> <TARGET_IP>
+```
+
+<b>Look for:</b> <code>VERSION</code> column (product, version, extra info, OS hints) plus default-script output: titles, hostnames, certificates, share names.<br /><b>Decision:</b> version known → search for matching CVEs and move to Step 13-18 for the service's NSE scripts. Version hidden (<code>tcpwrapped</code>) → try <code>--version-all</code> (Step 08).<br /><b>Next:</b> Step 07 if a port looks filtered; otherwise Step 08.<br /><b>Common mistake:</b> running <code>-sC -p-</code> in one pass — it is extremely slow. Restrict scripts to discovered ports.<br /><b>Evidence:</b> the scan plus the port/service table you will paste into the report.
+
+### Step 07 — Investigate a filtered or ambiguous port
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked<br /><b>Purpose:</b> distinguish filtered, closed and open-but-silent.
+
+```bash
+sudo nmap -sS -p <TARGET_PORT> --reason --max-retries 3 <TARGET_IP>
+```
+
+<b>Look for:</b> the <code>REASON</code> column (<code>syn-ack</code>, <code>reset</code>, <code>no-response</code>).<br /><b>Decision:</b> <code>reset</code> = closed · <code>no-response</code> = filtered or heavily rate-limited · <code>syn-ack</code> = open.<br /><b>Next:</b> if filtered, test the same service on an alternate port or move on; do not loop.<br /><b>Common mistake:</b> assuming "filtered" means "nothing is there" — a firewall may simply be dropping your probe.<br /><b>Evidence:</b> the reason table, if you later report a filtered service.
+
+## 4. Service and version detection
+
+### Step 08 — Heavier version detection
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked<br /><b>Purpose:</b> squeeze a version out of a service that returned little.
+
+```bash
+sudo nmap -sV --version-all -p <TARGET_PORT> <TARGET_IP>
+```
+
+<b>Look for:</b> a fuller <code>VERSION</code> string, sometimes with build numbers.<br /><b>Decision:</b> still nothing → banner-grab manually (<code>nc</code>) or use the service's own client.<br /><b>Next:</b> Step 13 for the relevant service family.<br /><b>Common mistake:</b> expecting <code>-sV</code> to identify vulnerabilities. It reports a version banner; it does <b>not</b> prove a service is vulnerable.<br /><b>Evidence:</b> the version string you will match against exploit databases.
+
+### Step 09 — Default scripts without version detection
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked<br /><b>Purpose:</b> get script output quickly when you already know the version.
+
+```bash
+sudo nmap -sC -p <TARGET_PORT> <TARGET_IP>
+```
+
+<b>Look for:</b> titles, headers, certificate subjects, share and user listings.<br /><b>Decision:</b> a script error usually means the service is not what the port suggested — confirm with Step 06.<br /><b>Next:</b> the service-specific section below.<br /><b>Common mistake:</b> <code>-sC</code> includes <code>http-title</code> etc. but is not a vulnerability scan.<br /><b>Evidence:</b> any hostname or username revealed here — it feeds DNS and vhost work.
+
+## 5. UDP scanning
+
+### Step 10 — Top UDP ports
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked<br /><b>Purpose:</b> catch services that only speak UDP (DNS 53, SNMP 161, NTP 123, IPMI 623, TFTP 69).
+
+```bash
+sudo nmap -sU --top-ports 50 --open -T4 -oN <OUTPUT_FILE> <TARGET_IP>
+```
+
+<b>Look for:</b> <code>open</code> or <code>open|filtered</code>.<br /><b>Decision:</b> <code>open|filtered</code> is normal and ambiguous — confirm with the service's own client (<code>dig</code>, <code>snmpwalk</code>) rather than rescanning.<br /><b>Next:</b> Step 11 for a suspected service, then its tool page.<br /><b>Common mistake:</b> scanning all 65,535 UDP ports on the exam clock. It takes hours.<br /><b>Evidence:</b> the UDP table; note which ports were confirmed by a real client.
+
+### Step 11 — Targeted UDP with a script
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked<br /><b>Purpose:</b> confirm and fingerprint one UDP service.
+
+```bash
+sudo nmap -sU -p <TARGET_PORT> --script snmp-info,ipmi-version <TARGET_IP>
+```
+
+<b>Look for:</b> a script response — that alone proves the port is open.<br /><b>Decision:</b> no response → treat as filtered and move on.<br /><b>Next:</b> SNMP → SNMP page · IPMI → note the firmware version.<br /><b>Common mistake:</b> mixing UDP and TCP ports in one <code>-p</code> list without <code>-sU</code>; nmap scans them as TCP.<br /><b>Evidence:</b> the script output block.
+
+## 6. OS detection
+
+### Step 12 — OS fingerprint
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked<br /><b>Purpose:</b> decide between Linux and Windows tooling early.
+
+```bash
+sudo nmap -O --osscan-guess -p <TARGET_PORT> <TARGET_IP>
+```
+
+<b>Look for:</b> <code>OS details:</code> or <code>Aggressive OS guesses:</code>.<br /><b>Decision:</b> one clean match → trust it enough to pick tools. No match → use service banners and TTL instead.<br /><b>Next:</b> choose the matching privilege-escalation page later.<br /><b>Common mistake:</b> reading a single "Linux 4.x" guess as fact — VMs and firewalls routinely mislead it.<br /><b>Evidence:</b> the OS guess plus the evidence you actually relied on (banner, TTL).
+
+## 7. Service-specific NSE
+
+### Step 13 — HTTP / HTTPS family
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -p <TARGET_PORT> --script http-title,http-headers,http-methods,http-enum,http-robots.txt <TARGET_IP>
+```
+
+<b>Look for:</b> page title, <code>Server:</code> header, allowed methods (<code>PUT</code> is interesting), enumerated paths, robots entries.<br /><b>Decision:</b> paths found → fetch them manually. <code>PUT</code> allowed → note it as a lead, do not upload yet.<br /><b>Next:</b> [HTTP & HTTPS — Complete Command Reference](https://app.notion.com/p/4011e51238b581649211c0c5db9c94f8) for the full web workflow.<br /><b>Common mistake:</b> <code>http-enum</code> is noisy and slow against large apps; it is a lead generator, not a directory brute-forcer.<br /><b>Evidence:</b> titles and paths; they are often the fastest route into the app.
+
+### Step 14 — SMB family
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -p139,445 --script smb-os-discovery,smb2-security-mode,smb-enum-shares,smb-enum-users <TARGET_IP>
+```
+
+<b>Look for:</b> hostname/domain/OS, <code>signing: enabled|disabled</code>, share names, account names.<br /><b>Decision:</b> shares listed → go to [SMB — Complete Command Reference](https://app.notion.com/p/4011e51238b581bbadcbe10d66d5ce31). Signing disabled → relay becomes worth investigating (prerequisites still apply).<br /><b>Next:</b> [SMB — Complete Command Reference](https://app.notion.com/p/4011e51238b581bbadcbe10d66d5ce31) Step 05.<br /><b>Common mistake:</b> reading "signing disabled" as "relay will work". You still need a coercible authentication and a target that accepts the relayed identity.<br /><b>Evidence:</b> the OS/domain block — it is often the first proof you are facing a domain-joined host.
+
+### Step 15 — FTP family
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -p21 --script ftp-anon,ftp-syst,ftp-vsftpd-backdoor <TARGET_IP>
+```
+
+<b>Look for:</b> <code>Anonymous FTP login allowed</code>, server type/features, backdoor response.<br /><b>Decision:</b> anonymous allowed → [FTP — Complete Command Reference](https://app.notion.com/p/4011e51238b581df8e65eb2517720af2) Step 04. Backdoor script positive → validate manually before any exploit.<br /><b>Next:</b> [FTP — Complete Command Reference](https://app.notion.com/p/4011e51238b581df8e65eb2517720af2).<br /><b>Common mistake:</b> firing a vsftpd exploit because the version is 2.3.4 — most 2.3.4 builds are not the backdoored one.<br /><b>Evidence:</b> the version banner and the anonymous result.
+
+### Step 16 — DNS
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -p53 --script dns-nsid,dns-zone-transfer --script-args dns-zone-transfer.domain=<DOMAIN> <TARGET_IP>
+```
+
+<b>Look for:</b> <code>zone-transfer:</code> records, or a transfer refusal.<br /><b>Decision:</b> transfer succeeds → every hostname goes into <code>/etc/hosts</code> and gets probed. Refused → normal; brute-force instead.<br /><b>Next:</b> [DNS — Complete Command Reference](https://app.notion.com/p/4011e51238b581b49f33e6d71a304549).<br /><b>Common mistake:</b> running <code>dns-zone-transfer</code> without <code>--script-args</code> — the script has no domain to ask for.<br /><b>Evidence:</b> the full zone dump, if you get one.
+
+### Step 17 — SSH
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -p22 --script ssh-auth-methods,ssh2-enum-algos <TARGET_IP>
+```
+
+<b>Look for:</b> accepted auth methods; weak KEX/ciphers/host-key algorithms.<br /><b>Decision:</b> <code>publickey</code> only + a key found on disk = worth trying. Password allowed → one careful attempt, not a brute force.<br /><b>Next:</b> [SSH — Complete Command Reference](https://app.notion.com/p/4011e51238b58123b446cc627bc02913).<br /><b>Common mistake:</b> treating weak algorithms as an authentication bypass. They are not.<br /><b>Evidence:</b> the auth-method line, before you attempt a login.
+
+### Step 18 — Database services
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -p3306 --script mysql-info <TARGET_IP>
+nmap -p1433 --script ms-sql-info,ms-sql-ntlm-info <TARGET_IP>
+```
+
+<b>Look for:</b> protocol version, auth salt, instance name, NTLM domain/host info.<br /><b>Decision:</b> MSSQL info leaks a domain name → useful for AD enumeration even before credentials.<br /><b>Next:</b> Other Services — Complete Command Reference (MySQL and MSSQL).<br /><b>Common mistake:</b> <code>ms-sql-ntlm-info</code> needs the instance to answer pre-auth; silence is not a closed port.<br /><b>Evidence:</b> instance and domain strings.
+
+### Step 19 — Broad vulnerability category
+
+<b>Priority:</b> Advanced · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+sudo nmap --script vuln -p <TARGET_PORT> <TARGET_IP>
+```
+
+<b>Look for:</b> <code>VULNERABLE</code> blocks with CVE references.<br /><b>Decision:</b> every hit is a lead, not a finding — reproduce manually before reporting or exploiting.<br /><b>Next:</b> validate, then exploit research.<br /><b>Common mistake:</b> running this against fragile services on the exam; some scripts can crash a daemon and cost you the box.<br /><b>Evidence:</b> the CVE IDs, with the manual reproduction that confirmed them.
+
+### Step 20 — Find the right script
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ls /usr/share/nmap/scripts | grep -i <KEYWORD>
+grep -l "categories" /usr/share/nmap/scripts/*.nse | head
+```
+
+<b>Look for:</b> a script name matching the service in front of you.<br /><b>Decision:</b> no script → read the service's own documentation; NSE coverage is not exhaustive.<br /><b>Next:</b> run the script with <code>--script-help</code> first.<br /><b>Common mistake:</b> guessing a script name. <code>--script-help</code> and the directory listing are authoritative.<br /><b>Evidence:</b> the exact script name you used, so the scan is reproducible.
+
+## 8. Output and evidence
+
+### Step 21 — Save every format
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+sudo nmap -sCV -p <TARGET_PORT> -oA <OUTPUT_FILE> <TARGET_IP>
+```
+
+<b>Look for:</b> three files appear: <code>.nmap</code> (readable), <code>.gnmap</code> (grep-able), <code>.xml</code> (machine-readable).<br /><b>Decision:</b> use <code>.gnmap</code> for quick greps (<code>grep open *.gnmap</code>), <code>.xml</code> for reporting tools.<br /><b>Next:</b> Step 22 if you want an HTML appendix.<br /><b>Common mistake:</b> using <code>-oN</code> everywhere and later having to re-scan for structured data.<br /><b>Evidence:</b> all three files belong in <code><OUTPUT_DIR></code>.
+
+### Step 22 — Turn XML into an HTML appendix
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+xsltproc -o <OUTPUT_FILE>.html /usr/share/nmap/nmap.xsl <OUTPUT_FILE>.xml
+```
+
+<b>Look for:</b> a readable HTML file with the port table.<br /><b>Decision:</b> useful for the report appendix; not required for scoring.<br /><b>Next:</b> attach or reference it in the report notes.<br /><b>Common mistake:</b> passing the <code>.nmap</code> file instead of the <code>.xml</code>.<br /><b>Evidence:</b> the HTML file plus the original XML.
+
+## 9. Performance and timing
+
+### Step 23 — Tune a slow or lossy scan
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+sudo nmap -p- -T3 --max-retries 2 --host-timeout 30m -oN <OUTPUT_FILE> <TARGET_IP>
+```
+
+<b>Look for:</b> fewer <code>no-response</code> ports and a stable completion.<br /><b>Decision:</b> still missing ports → scan in ranges (<code>-p 1-10000</code>, <code>-p 10001-20000</code>) so a failure is contained.<br /><b>Next:</b> Step 06 on the confirmed list.<br /><b>Common mistake:</b> raising <code>-T</code> to compensate for packet loss. It makes loss worse.<br /><b>Evidence:</b> the timing options used — they explain why two scans differ.
+
+### Step 24 — Why aggressive timing lies
+
+<b>Priority:</b> Core (read) · <b>Run on:</b> Kali · <b>Status:</b> Documented<br /><b>Purpose:</b> decide when speed is safe.
+
+- <code>-T4</code> is a reasonable default on a lab VPN.
+- <code>-T5</code> and very high <code>--min-rate</code> values cause dropped probes and <b>false negatives</b>.
+- <code>--max-retries 0</code> turns every lost packet into a missing port.
+- Fragmentation (<code>-f</code>), decoys (<code>-D</code>) and spoofed source ports are <b>conditional</b> — they exist to test filtering, not to be defaults, and <code>-D</code> produces false positives in host lists.
+
+## 10. Through a pivot
+
+### Step 25 — Scan an internal host through SOCKS
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali, with a SOCKS proxy already running · <b>Status:</b> Syntax Checked
+
+```bash
+proxychains4 nmap -sT -Pn -n -p <TARGET_PORT> <TARGET_IP>
+```
+
+<b>Look for:</b> a result at all — proxied scans are slow and lossy.<br /><b>Decision:</b> timeout → raise the proxy timeout and scan a single port; a whole-range scan through SOCKS is rarely worth it.<br /><b>Next:</b> once the port list is known, use the service's own client through the proxy.<br /><b>Common mistake:</b> <code>-sS</code> through proxychains — SYN scans cannot traverse a SOCKS proxy; you must use <code>-sT</code>.<br /><b>Evidence:</b> note that the result came via proxy; the report should say so.
+
+> <b>Pivoting variant (all pages):</b> if you are targeting an internal host, prepend <code>proxychains4</code> and add <code>-Pn</code> to skip host discovery, which usually fails through a proxy.
+
+## 11. Reading the results
+
+| State | Meaning | What to do |
+| --- | --- | --- |
+| <code>open</code> | A service accepted the connection | Enumerate it |
+| <code>closed</code> | Host replied with RST; nothing listening | No further action |
+| <code>filtered</code> | No reply — firewall dropped it | Try <code>--reason</code>, alternate ports, or move on |
+| <code>open\|filtered</code> | Cannot tell (UDP, or a firewall that eats RSTs) | Confirm with the service's own client |
+
+- <b>Version strings</b> are banners, not vulnerability proof. <code>Apache httpd 2.4.49</code> tells you which CVEs to research; it does not tell you the path is exploitable.
+- <b>TTL</b> near 64 suggests Linux/Unix, near 128 suggests Windows — a hint for tool selection, never a finding.
+- A single <code>open</code> port on a host with everything else filtered is a strong signal: it is probably the intended path.
+
+## 12. Troubleshooting
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| <code>Host seems down</code> | ICMP blocked | Add <code>-Pn</code> |
+| All ports filtered | Host firewall, or wrong IP | Verify with <code>ip route get</code>; try a known-open port |
+| Scan hangs on one port | Service accepts but never replies | <code>--host-timeout</code>, or scan that port with <code>nc -w 3</code> |
+| Missing ports found by another tool | Rate too high / packet loss | Drop <code>--min-rate</code>, use <code>-T3</code>, retry the port |
+| <code>Failed to resolve</code> | Hostname not in DNS or <code>/etc/hosts</code> | Use the IP, or add the entry |
+| <code>QUITTING!</code> early | Interface changed mid-scan | Confirm VPN stability, rerun |
+
+<b>Stop condition:</b> if two different scan strategies agree on the port list, stop scanning and start enumerating. Re-scanning the same host with the same options does not produce new information.
+
+## 13. Quick workflow
+
+1. <code>ip a; ip route get <TARGET_IP></code> — prove connectivity.
+2. <code>mkdir -p <OUTPUT_DIR></code> — set the evidence path.
+3. <code>nmap -sn</code> — only when sweeping a subnet.
+4. <code>sudo nmap -sS -T4 -oN ...</code> — fast baseline.
+5. <code>sudo nmap -p- --min-rate 5000 -T4 -oA ...</code> — complete port list.
+6. <code>sudo nmap -sCV -p <TARGET_PORT> -oA ...</code> — identify what is open.
+7. UDP top-50 — if the host looks sparse or a UDP service is suspected.
+8. Service NSE — Steps 13-18 for every service you found.
+9. Save <code>.nmap</code>/<code>.gnmap</code>/<code>.xml</code>, then open the matching tool page.
+
+## 14. Evidence to preserve
+
+- The three output files from <code>-oA</code> (do not overwrite them on a retry — use a new name).
+- The command line itself, including timing options.
+- Any hostname, domain, share or username revealed by NSE — these are credentials-adjacent.
+- A screenshot of the port table if the report requires visual proof.
+
+## 15. Related pages
+
+- [SMB — Complete Command Reference](https://app.notion.com/p/4011e51238b581bbadcbe10d66d5ce31) — shares, signing, authenticated enumeration
+- [FTP — Complete Command Reference](https://app.notion.com/p/4011e51238b581df8e65eb2517720af2) — anonymous access and file retrieval
+- [DNS — Complete Command Reference](https://app.notion.com/p/4011e51238b581b49f33e6d71a304549) — records, zone transfer, brute force
+- [HTTP & HTTPS — Complete Command Reference](https://app.notion.com/p/4011e51238b581649211c0c5db9c94f8) — web fingerprinting and content discovery
+- [SSH — Complete Command Reference](https://app.notion.com/p/4011e51238b58123b446cc627bc02913) — auth methods, keys, passphrases
+- [📖 OSCP Command Handbook](https://app.notion.com/p/4011e51238b581689fafe0600844e4a7) — placeholder legend and status definitions
+
+## 16. References
+
+- Nmap reference guide: [https://nmap.org/book/man.html](https://nmap.org/book/man.html)
+- NSE script documentation: [https://nmap.org/nsedoc/](https://nmap.org/nsedoc/)
+- Port scanning techniques: [https://nmap.org/book/man-port-scanning-techniques.html](https://nmap.org/book/man-port-scanning-techniques.html)
+
+## 17. Verification note
+
+Every flag on this page was checked against <code>nmap --help</code> and the installed script directory on <b>Nmap 7.99</b>. No scan here was run against a live target, so all statuses are <b>Syntax Checked</b> or <b>Documented</b>, never <b>Lab Tested</b>. Behaviour that depends on the target (filtering, timing, IPv6) can only be confirmed during real enumeration.

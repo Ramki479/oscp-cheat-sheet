@@ -1,0 +1,10 @@
+OK   #http-06 :: openssl s_client -connect <TARGET_IP>:443 -servername <DOMAIN> </dev/null 2>/dev/null | op
+OK   #active-directory-18 :: impacket-addcomputer -computer-name 'FAKE$' -computer-pass '<NEW_PASSWORD>' -dc-ip <DOMAIN
+OK   #linux-privesc-08 :: # cap_setuid on python
+OK   #windows-privesc-15 :: Get-Acl HKLM:\SOFTWARE\<VENDOR> | Format-List
+OK   #other-services-07 :: mysql -h <TARGET_IP> -u <USERNAME> -p
+OK   #shells-14 :: # encode (Linux)
+OK   #exam-execution-05 :: cat /root/proof.txt 2>/dev/null
+OK   #machine-notes-01 :: <command>
+shells-15 langs: ["bash","cmd"]
+errors: 0 []

@@ -1,0 +1,169 @@
+# PAGE ROUTES
+nmap h1="🛰️
+Nmap — Complete Command Reference" steps=25/25 sections=18 chips=10 empty=0
+smb h1="📁
+SMB — Complete Command Reference" steps=21/21 sections=16 chips=8 empty=0
+ftp h1="📂
+FTP — Complete Command Reference" steps=12/12 sections=17 chips=9 empty=0
+dns h1="🌐
+DNS — Complete Command Reference" steps=9/9 sections=15 chips=7 empty=0
+http h1="🕸️
+HTTP & HTTPS — Complete Command Reference" steps=16/16 sections=17 chips=9 empty=0
+ssh h1="🔑
+SSH — Complete Command Reference" steps=12/12 sections=19 chips=11 empty=0
+other-services h1="🧩
+Other Services — Complete Command Reference" steps=12/12 sections=13 chips=7 empty=0
+active-directory h1="🏰
+Active Directory — Complete Command Reference" steps=25/25 sections=16 chips=9 empty=0
+bleeding-edge h1="💥
+Bleeding Edge Vulnerabilities — NoPac, PrintNightmare & PetitPotam" steps=23/23 sections=7 chips=3 empty=0
+bloodhound h1="🐕
+BloodHound — Collection and Path Analysis" steps=14/14 sections=9 chips=3 empty=0
+post-exploitation h1="🔀
+Post-Exploitation & Lateral Movement — NetExec and Impacket" steps=20/20 sections=9 chips=2 empty=0
+passwords h1="🔓
+Passwords & Hashes — Complete Command Reference" steps=12/12 sections=10 chips=4 empty=0
+linux-privesc h1="🐧
+Linux Privilege Escalation — Complete Command Reference" steps=21/21 sections=15 chips=8 empty=0
+windows-privesc h1="🪟
+Windows Privilege Escalation — Complete Command Reference" steps=19/19 sections=17 chips=10 empty=0
+directory-vhost h1="🧱
+Directory & Virtual Host Enumeration — ffuf, Gobuster, Feroxbuster" steps=17/17 sections=10 chips=3 empty=0
+shells h1="🐚
+Shells & File Transfer — Complete Command Reference" steps=15/15 sections=11 chips=5 empty=0
+tunneling h1="🚇
+Tunneling & Pivoting — Complete Command Reference" steps=11/11 sections=10 chips=4 empty=0
+exploit-research h1="🧪
+Exploit Research & Payload Handling — Complete Command Reference" steps=14/14 sections=10 chips=4 empty=0
+attack-workflow h1="🧭
+OSCP Attack Workflow — Start Here" steps=0/0 sections=13 chips=13 empty=0
+machine-notes h1="📝
+OSCP Machine Notes — Template" steps=2/2 sections=12 chips=12 empty=0
+exam-rules h1="📜
+OSCP Exam Rules & Tool Restrictions" steps=0/0 sections=11 chips=11 empty=0
+exam-checklist h1="✅
+OSCP Exam Checklist & Evidence Collection" steps=0/0 sections=11 chips=11 empty=0
+exam-execution h1="🎯
+Exam Execution & Reporting — Proof, Timeline and Submission" steps=12/12 sections=11 chips=11 empty=0
+troubleshooting h1="🩺
+Troubleshooting — Complete Command Reference" steps=9/9 sections=10 chips=10 empty=0
+tool-reference h1="🧰
+Tool Reference — Executables, Packages & Verification Status" steps=0/0 sections=10 chips=10 empty=0
+
+# SERVICE ROUTES
+nmap -> "⌘
+Nmap commands" steps=25 activeChip=true
+smb -> "⌘
+SMB commands" steps=21 activeChip=true
+ftp -> "⌘
+FTP commands" steps=12 activeChip=true
+dns -> "⌘
+DNS commands" steps=9 activeChip=true
+http -> "⌘
+HTTP / HTTPS commands" steps=33 activeChip=true
+ssh -> "⌘
+SSH commands" steps=12 activeChip=true
+nfs -> "⌘
+NFS commands" steps=2 activeChip=true
+smtp -> "⌘
+SMTP commands" steps=2 activeChip=true
+snmp -> "⌘
+SNMP commands" steps=2 activeChip=true
+mysql -> "⌘
+MySQL commands" steps=1 activeChip=true
+mssql -> "⌘
+MSSQL commands" steps=2 activeChip=true
+rdp -> "⌘
+RDP commands" steps=1 activeChip=true
+winrm -> "⌘
+WinRM commands" steps=3 activeChip=true
+ipmi -> "⌘
+IPMI commands" steps=1 activeChip=true
+ad -> "⌘
+Active Directory commands" steps=62 activeChip=true
+impacket -> "⌘
+Impacket commands" steps=6 activeChip=true
+netexec -> "⌘
+NetExec commands" steps=10 activeChip=true
+bloodhound -> "⌘
+BloodHound commands" steps=14 activeChip=true
+passwords -> "⌘
+Passwords & Hashes commands" steps=12 activeChip=true
+linux -> "⌘
+Linux PrivEsc commands" steps=21 activeChip=true
+windows -> "⌘
+Windows PrivEsc commands" steps=19 activeChip=true
+privesc -> "⌘
+PrivEsc commands" steps=40 activeChip=true
+shells -> "⌘
+Shells commands" steps=15 activeChip=true
+transfer -> "⌘
+File Transfer commands" steps=15 activeChip=true
+pivoting -> "⌘
+Pivoting commands" steps=11 activeChip=true
+exploitation -> "⌘
+Exploitation commands" steps=14 activeChip=true
+fuzzing -> "⌘
+Content Discovery commands" steps=17 activeChip=true
+kerberos -> "⌘
+Kerberos commands" steps=6 activeChip=true
+node -> "⌘
+Node Inspector commands" steps=1 activeChip=true
+exam -> "⌘
+Exam commands" steps=12 activeChip=true
+notes -> "⌘
+Notes commands" steps=2 activeChip=true
+troubleshooting -> "⌘
+Troubleshooting commands" steps=9 activeChip=true
+
+# NAV
+navItems=25 chips=["Reference pages","Nmap","SMB","FTP","DNS","HTTP / HTTPS","SSH","NFS","SMTP","SNMP","MySQL","MSSQL","RDP","WinRM","IPMI","Active Directory","Impacket","NetExec","BloodHound","Kerberos","Passwords & Hashes","Linux PrivEsc","Windows PrivEsc","PrivEsc","Shells","Pivoting","Exploitation","Content Discovery","Exam","File Transfer","Node Inspector","Notes","Troubleshooting"]
+unlabelled buttons=0 unlabelled inputs=0
+
+# TITLES WITH MARKDOWN
+post-exploitation-13 :: [psexec.py](http://psexec.py) (SYSTEM, noisy)
+post-exploitation-14 :: [wmiexec.py](http://wmiexec.py) (semi-interactive, quieter)
+post-exploitation-15 :: [smbexec.py](http://smbexec.py) (no binary on disk)
+post-exploitation-16 :: [atexec.py](http://atexec.py) (scheduled task)
+post-exploitation-17 :: [secretsdump.py](http://secretsdump.py) (local and domain)
+directory-vhost-08 :: `-mc all` and the 403/500 problem
+rendered post-exploitation titles: []
+
+# ALTERNATIVE PRESENTATION
+[]
+bleeding-edge alternatives: [{"id":"bleeding-edge-15","badges":["CONDITIONAL","ALTERNATIVE","EITHER","DOCUMENTED"]},{"id":"bleeding-edge-20","badges":["ADVANCED","ALTERNATIVE","KALI","DOCUMENTED"]},{"id":"bleeding-edge-21","badges":["ADVANCED","ALTERNATIVE","KALI","DOCUMENTED"]},{"id":"bleeding-edge-22","badges":["ADVANCED","ALTERNATIVE","WINDOWS","DOCUMENTED"]},{"id":"bleeding-edge-23","badges":["ADVANCED","ALTERNATIVE","WINDOWS","DOCUMENTED"]}]
+
+# RUNON BADGES
+["KALI","CONTEXT VARIES","TARGET"]
+
+# VARIABLES
+before: nmap -sCV -p139,445 <TARGET_IP>
+after : nmap -sCV -p139,445 10.10.10.10
+invalid ip: {"value":"10.10.10.10.10","aria":"true","err":"Use a valid IPv4 address, e.g. 10.10.10.10","code":"nmap -sCV -p139,445 <TARGET_IP>","missing":"Missing values:\n<TARGET_IP>"}
+clipboard first line: nmap -sCV -p139,445 10.10.10.10
+missing copy toast: Copied | clip: nmap -sCV -p21 10.10.10.10
+
+# SEARCH
+{"h1":"Results for “smb signing”","hits":6,"desc":"6 matching steps across 25 pages."}
+no-result empty: No matches. Try a tool name, port, or error message.
+
+# ROUTING
+after back: 📁
+SMB — Complete Command Reference
+after forward: 📂
+FTP — Complete Command Reference
+service reload: ⌘
+NFS commands
+unknown route: ⌘
+SMB commands
+
+# OVERFLOW
+1440px horizontalOverflow=0 scrollableCodeBlocks=0 maxCodeWidth=1080
+1024px horizontalOverflow=0 scrollableCodeBlocks=3 maxCodeWidth=859
+390px horizontalOverflow=0 scrollableCodeBlocks=24 maxCodeWidth=859
+
+# OUTPUT BLOCKS
+{"blocks":21,"copyButtons":0,"placeholders":2}
+
+# CONSOLE / NETWORK
+consoleErrors=0 pageErrors=0 failedRequests=0 external=0

