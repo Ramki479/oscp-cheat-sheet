@@ -63,10 +63,10 @@ run(F,"ftp-04","negative: bad FTP credentials",`curl -s --max-time 5 ftp://bad:b
 
 const K="S06";
 run(K,"ssh-01","confirm SSH version","nmap -sV -p22 127.0.0.1",{timeout:60});
-run(K,"ssh-02","ask for auth methods without a credential",`ssh -o PreferredAuthentications=none -o StrictHostKeyChecking=no -o BatchMode=yes ramki@127.0.0.1`);
+run(K,"ssh-02","ask for auth methods without a credential",`ssh -o PreferredAuthentications=none -o StrictHostKeyChecking=no -o BatchMode=yes $USER@127.0.0.1`);
 run(K,"ssh-02","nmap auth-methods cross-check",`nmap -p22 --script ssh-auth-methods 127.0.0.1`,{timeout:60});
 run(K,"ssh-10","algorithm list",`nmap -p22 --script ssh2-enum-algos 127.0.0.1`,{timeout:60});
-run(K,"ssh-03","verbose trace (no credential supplied)",`ssh -v -o BatchMode=yes -o StrictHostKeyChecking=no ramki@127.0.0.1 2>&1 | tail -12`);
+run(K,"ssh-03","verbose trace (no credential supplied)",`ssh -v -o BatchMode=yes -o StrictHostKeyChecking=no $USER@127.0.0.1 2>&1 | tail -12`);
 run(K,"ssh-04","environment check: sshpass prerequisite",`command -v sshpass || echo "sshpass NOT INSTALLED"`);
 
 const L="S07";

@@ -305,8 +305,8 @@ PORT     STATE SERVICE VERSION
 |  Data connection closed.
 |_End of status.
 | ftp-anon: Anonymous FTP login allowed (FTP code 230)
-| -rw-rw-r--   1 ramki    ramki          10 Oct 29 12:37 readme.txt
-|_drwxrwxr-x   2 ramki    ramki          60 Oct 29 12:37 sub
+| -rw-rw-r--   1 <USER>    <USER>          10 Oct 29 12:37 readme.txt
+|_drwxrwxr-x   2 <USER>    <USER>          60 Oct 29 12:37 sub
 
 Service det
 
@@ -361,9 +361,9 @@ Service detection performed. Please report any incorrect results at https://nmap
 Nmap done: 1 IP address (1 host up) scanned in 0.22 seconds
 
 ### S06 ssh-02 :: ask for auth methods without a credential :: exit=255 (125ms)
-$ ssh -o PreferredAuthentications=none -o StrictHostKeyChecking=no -o BatchMode=yes ramki@127.0.0.1
+$ ssh -o PreferredAuthentications=none -o StrictHostKeyChecking=no -o BatchMode=yes <USER>@127.0.0.1
 Pseudo-terminal will not be allocated because stdin is not a terminal.
-ramki@127.0.0.1: Permission denied (publickey,password).
+<USER>@127.0.0.1: Permission denied (publickey,password).
 
 ### S06 ssh-02 :: nmap auth-methods cross-check :: exit=0 (140ms)
 $ nmap -p22 --script ssh-auth-methods 127.0.0.1
@@ -405,15 +405,15 @@ PORT   STATE SERVICE
 |       rsa-sh
 
 ### S06 ssh-03 :: verbose trace (no credential supplied) :: exit=0 (157ms)
-$ ssh -v -o BatchMode=yes -o StrictHostKeyChecking=no ramki@127.0.0.1 2>&1 | tail -12
-debug1: Will attempt key: /home/ramki/.ssh/id_ecdsa_sk 
-debug1: Will attempt key: /home/ramki/.ssh/id_ed25519_sk 
-debug1: Offering public key: /home/ramki/.ssh/id_ed25519 ED25519 SHA256:1HkfaGmsMGXt3859hOCgTjzAisxD+KDLfUOyhe5IXFs agent
+$ ssh -v -o BatchMode=yes -o StrictHostKeyChecking=no <USER>@127.0.0.1 2>&1 | tail -12
+debug1: Will attempt key: /home/<USER>/.ssh/id_ecdsa_sk 
+debug1: Will attempt key: /home/<USER>/.ssh/id_ed25519_sk 
+debug1: Offering public key: /home/<USER>/.ssh/id_ed25519 ED25519 SHA256:1HkfaGmsMGXt3859hOCgTjzAisxD+KDLfUOyhe5IXFs agent
 debug1: Authentications that can continue: publickey,password
 debug1: Offering public key: ramki479@github.com ED25519 SHA256:LFZJOPJTONadrA7pj+M7D/UqCCUiqoRmUNmzAeYrqdA agent
 debug1: Authentications that can continue: publickey,password
-debug1: Trying private key: /home/ramki/.ssh/id_rsa
-debug1: Trying private key: /home/ramki/.ssh/id_ecdsa
+debug1: Trying private key: /home/<USER>/.ssh/id_rsa
+debug1: Trying private key: /home/<USER>/.ssh/id_ecdsa
 debug1: Tryi
 
 ### S06 ssh-04 :: environment check: sshpass prerequisite :: exit=0 (5ms)
@@ -422,8 +422,8 @@ sshpass NOT INSTALLED
 
 ### S07 linux-privesc-01 :: identity and sudo rights :: exit=0 (64ms)
 $ timeout 8 bash -c 'id; whoami; sudo -l; sudo -V' 2>&1 | head -20
-uid=1000(ramki) gid=1000(ramki) groups=1000(ramki),4(adm),20(dialout),24(cdrom),25(floppy),27(sudo),29(audio),30(dip),44(video),46(plugdev),100(users),101(netdev),102(scanner),112(bluetooth),115(lpadmin),119(wireshark),124(kaboxer),126(docker)
-ramki
+uid=1000(<USER>) gid=1000(<USER>) groups=1000(<USER>),4(adm),20(dialout),24(cdrom),25(floppy),27(sudo),29(audio),30(dip),44(video),46(plugdev),100(users),101(netdev),102(scanner),112(bluetooth),115(lpadmin),119(wireshark),124(kaboxer),126(docker)
+<USER>
 sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper
 sudo: a password is required
 Sudo version 1.9.17p2

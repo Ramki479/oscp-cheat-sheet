@@ -24,6 +24,6 @@ $ curl -sS --max-time 10 -v ftp://nobody:wrong@127.0.0.1:2121/ 2>&1 | grep -E '^
 # -> 530 = credential refused (the denied branch of the new table)
 
 ## 3. Directory listing with the same URL
--rw-rw-r--   1 ramki    ramki           8 Oct 30 06:10 README.txt
--rw-rw-r--   1 ramki    ramki          10 Oct 29 12:37 readme.txt
-drwxrwxr-x   2 ramki    ramki          60 Oct 29 12:37 sub
+-rw-rw-r--   1 <USER>    <USER>           8 Oct 30 06:10 README.txt
+-rw-rw-r--   1 <USER>    <USER>          10 Oct 29 12:37 readme.txt
+drwxrwxr-x   2 <USER>    <USER>          60 Oct 29 12:37 sub

@@ -237,6 +237,10 @@ than repeated.
    untested.
 7. **Status labels describe this build, not your lab.** `Syntax Checked` means the flags were
    checked against the installed tool on the audit host.
+8. **Evidence was redacted for publication.** On 2026-10-30 the local account name and the
+   `/home/<USER>` paths inside `audit/evidence/*` were replaced with `<USER>`. Commands, exit
+   codes, timings and output are otherwise unchanged; only the identity of the machine that
+   produced them is hidden.
 
 ---
 
