@@ -111,7 +111,11 @@ data/meta.json                counts, source checksums, normalization warnings
 assets/app.js                 DOM/routing/drawer/copy/persistence/service worker
 index.html · assets/app.css   static shell
 sw.js · manifest.webmanifest  offline cache
+        │
+        ▼  tools/bundle.mjs  copy shell + data/ (and nothing else) into build/
+build/                        deployable site — the publish directory for static hosts
 vercel.json                   cache headers; no build step
+render.yaml                   Render blueprint: build + publish ./build
 ```
 
 Key behaviours encoded in `assets/engine.js`:
@@ -248,9 +252,31 @@ and mobile.
 
 ---
 
-## Deploy to Vercel
+## Deploy to a static host
 
-The repository is a plain static site; there is no build command.
+The app itself is a plain static site, but `npm run build` must run first: it
+regenerates `data/*.json` from `content/raw/` and assembles the deployable
+folder in `build/`.
+
+| Setting | Value |
+| --- | --- |
+| Build command | `npm ci && npm run build` |
+| Publish / output directory | `build` |
+| Node version | 24 |
+
+`build/` contains only `index.html`, `manifest.webmanifest`, `sw.js`, `assets/`,
+`icons/` and `data/`. Sources, tests, audits and backups stay out of it.
+
+### Render
+
+`render.yaml` in the repository root is a blueprint with those settings baked
+in, so a Render Blueprint deploy needs no dashboard edits. For a plain static
+site created from the dashboard, set the build command and publish directory
+above — publishing the repository root instead serves `content/`, `tools/` and
+the audit trail to the public and fails nothing, which is why `build/` is the
+default.
+
+### Vercel
 
 **Dashboard**
 
@@ -266,8 +292,9 @@ npm i -g vercel
 vercel --prod
 ```
 
-`vercel.json` sets `no-cache` for `sw.js` and `/data/*`, and a short cache for `/assets/*`.
-HTTPS (required for the service worker) is automatic on Vercel.
+Vercel serves the repository root as-is, so `build/` is not used there.
+`vercel.json` sets `no-cache` for `sw.js` and `/data/*`, and a short cache for
+`/assets/*`. HTTPS (required for the service worker) is automatic on Vercel.
 
 > This site has no authentication. Anything placed in `data/` is public. Never put real
 > credentials, hashes, or client data into the JSON.
@@ -304,10 +331,12 @@ data/                       generated JSON (committed for static hosting)
 content/raw/                frozen source export + per-page metadata
 content/step-ids.json       stable step-ID registry keyed by page + step title
 tools/parse.mjs             export → JSON normalizer/parser
+tools/bundle.mjs            copies the browser-facing files into build/
 tools/validate.mjs          data contract checks
-tests/                      node:test suites (engine, data, browser)
+tests/                      node:test suites (engine, data, bundle, browser)
 sw.js · manifest.webmanifest · icons/icon.svg
-vercel.json · package.json
+build/                      generated publish directory (git-ignored)
+vercel.json · render.yaml · package.json
 ```
 
 ### DOM shell

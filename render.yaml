@@ -1,0 +1,22 @@
+services:
+  - type: web
+    runtime: static
+    name: oscp-cheat-sheet
+    branch: main
+    # parse.mjs regenerates data/*.json from content/raw, then bundle.mjs copies
+    # only the browser-facing files into build/. build/ is the publish directory.
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./build
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+    headers:
+      - path: /sw.js
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate
+      - path: /data/*
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=3600
