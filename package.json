@@ -2,6 +2,7 @@
   "name": "oscp-cheat-sheet",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Static, offline-ready OSCP command cheat sheet generated from the OSCP Command Handbook.",
   "scripts": {
